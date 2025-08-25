@@ -103,35 +103,6 @@
                         userId = null;
                         loginSection.classList.remove('hidden');
                         appContent.classList.add('hidden');
-
-                        // Attach login button event listener only when auth state is confirmed and user is not logged in
-                        loginBtn.addEventListener('click', async () => {
-                            const email = emailInput.value;
-                            const password = passwordInput.value;
-                            try {
-                                await signInWithEmailAndPassword(auth, email, password);
-                                loginError.classList.add('hidden');
-                            } catch (error) {
-                                let errorMessage = "An unknown error occurred.";
-                                switch(error.code) {
-                                    case 'auth/invalid-email':
-                                        errorMessage = "Invalid email format.";
-                                        break;
-                                    case 'auth/user-not-found':
-                                    case 'auth/wrong-password':
-                                        errorMessage = "Incorrect email or password.";
-                                        break;
-                                    case 'auth/network-request-failed':
-                                        errorMessage = "Network error. Please check your connection.";
-                                        break;
-                                    default:
-                                        errorMessage = error.message;
-                                        break;
-                                }
-                                loginError.textContent = errorMessage;
-                                loginError.classList.remove('hidden');
-                            }
-                        }, { once: true }); // Use {once: true} to prevent multiple listeners
                     }
                 });
             } else {
@@ -140,6 +111,41 @@
                 loginSection.classList.remove('hidden');
             }
 
+            // Attach login button event listener once and for all
+            loginBtn.addEventListener('click', async () => {
+                const email = emailInput.value;
+                const password = passwordInput.value;
+
+                loginBtn.disabled = true;
+                loginBtn.textContent = 'Logging in...';
+                loginError.classList.add('hidden');
+
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                } catch (error) {
+                    let errorMessage = "An unknown error occurred.";
+                    switch(error.code) {
+                        case 'auth/invalid-email':
+                            errorMessage = "Invalid email format.";
+                            break;
+                        case 'auth/user-not-found':
+                        case 'auth/wrong-password':
+                            errorMessage = "Incorrect email or password.";
+                            break;
+                        case 'auth/network-request-failed':
+                            errorMessage = "Network error. Please check your connection.";
+                            break;
+                        default:
+                            errorMessage = error.message;
+                            break;
+                    }
+                    loginError.textContent = errorMessage;
+                    loginError.classList.remove('hidden');
+                } finally {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Login';
+                }
+            });
 
             // All other event listeners for the main app
             completeBtn.addEventListener('click', () => {
