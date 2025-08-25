@@ -9,70 +9,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global variables for Firebase
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let app, db, auth;
-        let userId = null;
-        let isAuthReady = false;
-
-        // Ensure Firebase is initialized
-        if (Object.keys(firebaseConfig).length > 0) {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                    isAuthReady = true;
-                    // Listen for real-time data changes
-                    if (db) {
-                        const ordersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/orders`));
-                        onSnapshot(ordersQuery, (snapshot) => {
-                            orders = [];
-                            snapshot.forEach(doc => {
-                                orders.push({ id: doc.id, ...doc.data() });
-                            });
-                            renderOrders();
-                        });
-                    }
-                } else {
-                    userId = null;
-                    isAuthReady = true;
-                    // Handle sign-in for users with custom tokens
-                    if (initialAuthToken) {
-                        try {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } catch (error) {
-                            console.error("Custom token sign-in failed:", error);
-                            // Fallback to anonymous sign-in if custom token fails
-                            try {
-                                await signInAnonymously(auth);
-                            } catch (error) {
-                                console.error("Anonymous sign-in failed:", error);
-                            }
-                        }
-                    } else {
-                        // Sign in anonymously if no custom token is provided
-                        try {
-                            await signInAnonymously(auth);
-                        } catch (error) {
-                            console.error("Anonymous sign-in failed:", error);
-                        }
-                    }
-                }
-            });
-        }
-    </script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -198,264 +134,134 @@
     </div>
 
     <script type="module">
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase-related variables from the head script
-        let auth, db, userId, isAuthReady;
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // Wait for Firebase to be ready before proceeding
-        const waitForFirebase = new Promise(resolve => {
-            const check = () => {
-                if (window.auth && window.db && window.isAuthReady) {
-                    auth = window.auth;
-                    db = window.db;
-                    userId = window.userId;
-                    isAuthReady = window.isAuthReady;
-                    resolve();
-                } else {
-                    setTimeout(check, 50);
+        let app, db, auth;
+        let userId = null;
+        let orders = [];
+        let currentOrderID = null;
+        let currentName = null;
+        let html5QrCode;
+        let scannerStarted = false;
+
+        const reader = document.getElementById('reader');
+        const scannedInfo = document.getElementById('scanned-info');
+        const scannedDoDisplay = document.getElementById('scanned-do');
+        const scannedNameDisplay = document.getElementById('scanned-name');
+        const statusActions = document.getElementById('status-actions');
+        const completeBtn = document.getElementById('complete-btn');
+        const incompleteBtn = document.getElementById('incomplete-btn');
+        const commentModal = document.getElementById('comment-modal');
+        const commentInput = document.getElementById('comment-input');
+        const submitCommentBtn = document.getElementById('submit-comment');
+        const cancelCommentBtn = document.getElementById('cancel-comment');
+        const exportBtn = document.getElementById('export-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const ordersTableBody = document.getElementById('orders-table-body');
+        const confirmationModal = document.getElementById('confirmation-modal');
+        const confirmationTitle = document.getElementById('confirmation-title');
+        const confirmationText = document.getElementById('confirmation-text');
+        const confirmClearBtn = document.getElementById('confirm-clear');
+        const cancelClearBtn = document.getElementById('cancel-clear');
+        const loginSection = document.getElementById('login-section');
+        const appContent = document.getElementById('app-content');
+        const loginBtn = document.getElementById('login-btn');
+        const emailInput = document.getElementById('email-input');
+        const passwordInput = document.getElementById('password-input');
+        const loginError = document.getElementById('login-error');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // Initialize Firebase
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            // Handle sign-in for users with custom tokens or anonymously
+            if (initialAuthToken) {
+                signInWithCustomToken(auth, initialAuthToken).catch(error => {
+                    console.error("Custom token sign-in failed:", error);
+                    signInAnonymously(auth); // Fallback to anonymous sign-in
+                });
+            } else {
+                signInAnonymously(auth); // Sign in anonymously if no token
+            }
+        }
+
+        // Handle UI state and event listeners based on authentication
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                userId = user.uid;
+                loginSection.classList.add('hidden');
+                appContent.classList.remove('hidden');
+                userIdDisplay.textContent = userId;
+
+                // Only set up event listeners once a user is authenticated
+                setupEventListeners();
+
+                // Only start the scanner once
+                if (!scannerStarted) {
+                    startScanner();
+                    scannerStarted = true;
                 }
-            };
-            check();
+                
+                // Set up real-time listener for orders
+                const ordersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/orders`));
+                onSnapshot(ordersQuery, (snapshot) => {
+                    orders = [];
+                    snapshot.forEach(doc => {
+                        orders.push({ id: doc.id, ...doc.data() });
+                    });
+                    // Sort the orders by timestamp in descending order
+                    orders.sort((a, b) => b.timestamp - a.timestamp);
+                    renderOrders();
+                });
+                
+            } else {
+                userId = null;
+                loginSection.classList.remove('hidden');
+                appContent.classList.add('hidden');
+            }
         });
 
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Wait for Firebase to be initialized and auth state to be checked
-            await waitForFirebase;
-
-            const reader = document.getElementById('reader');
-            const scannedInfo = document.getElementById('scanned-info');
-            const scannedDoDisplay = document.getElementById('scanned-do');
-            const scannedNameDisplay = document.getElementById('scanned-name');
-            const statusActions = document.getElementById('status-actions');
-            const completeBtn = document.getElementById('complete-btn');
-            const incompleteBtn = document.getElementById('incomplete-btn');
-            const commentModal = document.getElementById('comment-modal');
-            const commentInput = document.getElementById('comment-input');
-            const submitCommentBtn = document.getElementById('submit-comment');
-            const cancelCommentBtn = document.getElementById('cancel-comment');
-            const exportBtn = document.getElementById('export-btn');
-            const clearBtn = document.getElementById('clear-btn');
-            const ordersTableBody = document.getElementById('orders-table-body');
-            const confirmationModal = document.getElementById('confirmation-modal');
-            const confirmationTitle = document.getElementById('confirmation-title');
-            const confirmationText = document.getElementById('confirmation-text');
-            const confirmClearBtn = document.getElementById('confirm-clear');
-            const cancelClearBtn = document.getElementById('cancel-clear');
-            const loginSection = document.getElementById('login-section');
-            const appContent = document.getElementById('app-content');
-            const loginBtn = document.getElementById('login-btn');
-            const emailInput = document.getElementById('email-input');
-            const passwordInput = document.getElementById('password-input');
-            const loginError = document.getElementById('login-error');
-            const userIdDisplay = document.getElementById('user-id-display');
-
-            let orders = [];
-            let currentOrderID = null;
-            let currentName = null;
-            let html5QrCode;
-
-            // Handle UI state based on authentication
-            const updateUI = (user) => {
-                if (user) {
-                    loginSection.classList.add('hidden');
-                    appContent.classList.remove('hidden');
-                    userIdDisplay.textContent = user.uid;
-                    startScanner();
-                } else {
-                    loginSection.classList.remove('hidden');
-                    appContent.classList.add('hidden');
-                    // Stop scanner if logged out
-                    if (html5QrCode && html5QrCode.isScanning) {
-                        html5QrCode.stop().then(() => {
-                            console.log("QR scanning stopped.");
-                        }).catch(err => {
-                            console.error("Error stopping scanner:", err);
-                        });
-                    }
+        // Event Listeners for the login form (can be set up outside of onAuthStateChanged)
+        loginBtn.addEventListener('click', async () => {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                loginError.classList.add('hidden');
+            } catch (error) {
+                let errorMessage = "An unknown error occurred.";
+                switch(error.code) {
+                    case 'auth/invalid-email':
+                        errorMessage = "Invalid email format.";
+                        break;
+                    case 'auth/user-not-found':
+                    case 'auth/wrong-password':
+                        errorMessage = "Incorrect email or password.";
+                        break;
+                    case 'auth/network-request-failed':
+                        errorMessage = "Network error. Please check your connection.";
+                        break;
+                    default:
+                        errorMessage = error.message;
+                        break;
                 }
-            };
-
-            // Login functionality
-            loginBtn.addEventListener('click', async () => {
-                const email = emailInput.value;
-                const password = passwordInput.value;
-                try {
-                    await signInWithEmailAndPassword(auth, email, password);
-                    loginError.classList.add('hidden');
-                } catch (error) {
-                    let errorMessage = "An unknown error occurred.";
-                    switch(error.code) {
-                        case 'auth/invalid-email':
-                            errorMessage = "Invalid email format.";
-                            break;
-                        case 'auth/user-not-found':
-                        case 'auth/wrong-password':
-                            errorMessage = "Incorrect email or password.";
-                            break;
-                        case 'auth/network-request-failed':
-                            errorMessage = "Network error. Please check your connection.";
-                            break;
-                        default:
-                            errorMessage = error.message;
-                            break;
-                    }
-                    loginError.textContent = errorMessage;
-                    loginError.classList.remove('hidden');
-                }
-            });
-
-            // Listen for auth state changes to update UI
-            onAuthStateChanged(auth, updateUI);
-
-            // Initialize the QR code scanner
-            function startScanner() {
-                html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-                let lastScannedText = null;
-                let debounceTimeout = null;
-                
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    (decodedText, decodedResult) => {
-                        if (lastScannedText === decodedText) {
-                            return;
-                        }
-                        if (debounceTimeout) {
-                            clearTimeout(debounceTimeout);
-                        }
-                        lastScannedText = decodedText;
-                        debounceTimeout = setTimeout(() => {
-                            const trimmedText = decodedText.trim();
-                            let doNo = trimmedText;
-                            let name = 'N/A';
-
-                            // Improved parsing logic to handle various formats
-                            if (trimmedText.includes(',')) {
-                                const parts = trimmedText.split(',');
-                                doNo = parts[0] ? parts[0].trim() : 'N/A';
-                                name = parts[1] ? parts[1].trim() : 'N/A';
-                            }
-                            else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
-                                const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
-                                const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
-                                
-                                doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
-                                name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
-                            }
-                            
-                            // Remove any surrounding quotes from the extracted values
-                            doNo = doNo.replace(/^"|"$/g, '');
-                            name = name.replace(/^"|"$/g, '');
-
-                            currentOrderID = doNo;
-                            currentName = name;
-
-                            scannedDoDisplay.textContent = currentOrderID;
-                            scannedNameDisplay.textContent = currentName;
-                            scannedInfo.classList.remove('hidden');
-                            statusActions.classList.remove('hidden');
-                            
-                            html5QrCode.pause();
-                        }, 500);
-                    },
-                    (errorMessage) => {
-                        // Error callback is expected for a continuous scan.
-                    }
-                ).catch((err) => {
-                    console.error(`Unable to start scanning, make sure camera is available.`, err);
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">Error</h2>
-                            <p class="text-gray-600">Unable to start the camera. Please ensure camera permissions are granted.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
-                });
+                loginError.textContent = errorMessage;
+                loginError.classList.remove('hidden');
             }
+        });
 
-            // Render orders to the table
-            function renderOrders() {
-                ordersTableBody.innerHTML = '';
-                if (orders.length === 0) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td colspan="6" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
-                    ordersTableBody.appendChild(row);
-                    return;
-                }
-                orders.forEach(order => {
-                    const row = document.createElement('tr');
-                    const statusColor = order.status === 'Complete' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                    const comment = order.comment ? order.comment : '—';
-                    const name = order.name ? order.name : '—';
-                    row.innerHTML = `
-                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${order.doNo}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${name}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span></td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${comment}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.date}</td>
-                        <td class="px-4 py-3 whitespace-now-empty text-sm text-gray-500">${order.time}</td>
-                    `;
-                    ordersTableBody.appendChild(row);
-                });
-            }
-
-            // Add new order function
-            async function addNewOrder(status, comment = null) {
-                if (!currentOrderID || !userId) return;
-                const now = new Date();
-                const newOrderRef = doc(collection(db, `artifacts/${window.appId}/users/${userId}/orders`));
-                const orderData = {
-                    doNo: currentOrderID,
-                    name: currentName,
-                    status: status,
-                    comment: comment,
-                    date: now.toLocaleDateString(),
-                    time: now.toLocaleTimeString(),
-                    timestamp: now.getTime()
-                };
-                try {
-                    await setDoc(newOrderRef, orderData);
-                    resetUI();
-                    if (html5QrCode) {
-                        html5QrCode.resume();
-                    }
-                } catch (e) {
-                    console.error("Error adding document: ", e);
-                }
-            }
-
-            // Delete all orders for the current user
-            async function clearAllOrders() {
-                if (!userId) return;
-                const ordersRef = collection(db, `artifacts/${window.appId}/users/${userId}/orders`);
-                const snapshot = await getDocs(ordersRef);
-                const deletePromises = [];
-                snapshot.forEach(doc => {
-                    deletePromises.push(deleteDoc(doc.ref));
-                });
-                try {
-                    await Promise.all(deletePromises);
-                    console.log("All documents successfully deleted!");
-                } catch (e) {
-                    console.error("Error clearing documents: ", e);
-                }
-            }
-
-            // Reset UI after an order is processed
-            function resetUI() {
-                currentOrderID = null;
-                currentName = null;
-                scannedInfo.classList.add('hidden');
-                statusActions.classList.add('hidden');
-            }
-
-            // Event Listeners
+        // Function to set up all event listeners for the main app
+        function setupEventListeners() {
             completeBtn.addEventListener('click', () => {
                 addNewOrder('Complete');
             });
@@ -479,7 +285,7 @@
                     html5QrCode.resume();
                 }
             });
-            
+
             // Clear History Button - First Confirmation
             clearBtn.addEventListener('click', () => {
                 if (orders.length === 0) {
@@ -501,7 +307,7 @@
                 confirmClearBtn.className = 'py-2 px-4 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors';
                 confirmationModal.classList.remove('hidden');
             });
-            
+
             // Second Confirmation and Final Action
             confirmClearBtn.addEventListener('click', async () => {
                 if (confirmClearBtn.textContent === "Confirm") {
@@ -555,8 +361,153 @@
                 link.click();
                 document.body.removeChild(link);
             });
+        }
 
-        });
+        // Initialize the QR code scanner
+        function startScanner() {
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+            let lastScannedText = null;
+            let debounceTimeout = null;
+            
+            html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText, decodedResult) => {
+                    if (lastScannedText === decodedText) {
+                        return;
+                    }
+                    if (debounceTimeout) {
+                        clearTimeout(debounceTimeout);
+                    }
+                    lastScannedText = decodedText;
+                    debounceTimeout = setTimeout(() => {
+                        const trimmedText = decodedText.trim();
+                        let doNo = trimmedText;
+                        let name = 'N/A';
+
+                        // Improved parsing logic to handle various formats
+                        if (trimmedText.includes(',')) {
+                            const parts = trimmedText.split(',');
+                            doNo = parts[0] ? parts[0].trim() : 'N/A';
+                            name = parts[1] ? parts[1].trim() : 'N/A';
+                        }
+                        else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
+                            const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
+                            const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
+                            
+                            doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
+                            name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
+                        }
+                        
+                        // Remove any surrounding quotes from the extracted values
+                        doNo = doNo.replace(/^"|"$/g, '');
+                        name = name.replace(/^"|"$/g, '');
+
+                        currentOrderID = doNo;
+                        currentName = name;
+
+                        scannedDoDisplay.textContent = currentOrderID;
+                        scannedNameDisplay.textContent = currentName;
+                        scannedInfo.classList.remove('hidden');
+                        statusActions.classList.remove('hidden');
+                        
+                        html5QrCode.pause();
+                    }, 500);
+                },
+                (errorMessage) => {
+                    // Error callback is expected for a continuous scan.
+                }
+            ).catch((err) => {
+                console.error(`Unable to start scanning, make sure camera is available.`, err);
+                const messageBox = document.createElement('div');
+                messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                messageBox.innerHTML = `
+                    <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                        <h2 class="text-xl font-semibold mb-4 text-gray-800">Error</h2>
+                        <p class="text-gray-600">Unable to start the camera. Please ensure camera permissions are granted.</p>
+                        <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                    </div>
+                `;
+                document.body.appendChild(messageBox);
+            });
+        }
+
+        // Render orders to the table
+        function renderOrders() {
+            ordersTableBody.innerHTML = '';
+            if (orders.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = `<td colspan="6" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
+                ordersTableBody.appendChild(row);
+                return;
+            }
+            orders.forEach(order => {
+                const row = document.createElement('tr');
+                const statusColor = order.status === 'Complete' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                const comment = order.comment ? order.comment : '—';
+                const name = order.name ? order.name : '—';
+                row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${order.doNo}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${name}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span></td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${comment}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.date}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.time}</td>
+                `;
+                ordersTableBody.appendChild(row);
+            });
+        }
+
+        // Add new order function
+        async function addNewOrder(status, comment = null) {
+            if (!currentOrderID || !userId) return;
+            const now = new Date();
+            const newOrderRef = doc(collection(db, `artifacts/${appId}/users/${userId}/orders`));
+            const orderData = {
+                doNo: currentOrderID,
+                name: currentName,
+                status: status,
+                comment: comment,
+                date: now.toLocaleDateString(),
+                time: now.toLocaleTimeString(),
+                timestamp: now.getTime()
+            };
+            try {
+                await setDoc(newOrderRef, orderData);
+                resetUI();
+                if (html5QrCode) {
+                    html5QrCode.resume();
+                }
+            } catch (e) {
+                console.error("Error adding document: ", e);
+            }
+        }
+
+        // Delete all orders for the current user
+        async function clearAllOrders() {
+            if (!userId) return;
+            const ordersRef = collection(db, `artifacts/${appId}/users/${userId}/orders`);
+            const snapshot = await getDocs(ordersRef);
+            const deletePromises = [];
+            snapshot.forEach(doc => {
+                deletePromises.push(deleteDoc(doc.ref));
+            });
+            try {
+                await Promise.all(deletePromises);
+                console.log("All documents successfully deleted!");
+            } catch (e) {
+                console.error("Error clearing documents: ", e);
+            }
+        }
+
+        // Reset UI after an order is processed
+        function resetUI() {
+            currentOrderID = null;
+            currentName = null;
+            scannedInfo.classList.add('hidden');
+            statusActions.classList.add('hidden');
+        }
     </script>
 </body>
 </html>
