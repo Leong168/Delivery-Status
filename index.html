@@ -1,348 +1,562 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Order QR Scanner</title>
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-<style>
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-      Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-    margin: 0;
-    padding: 20px;
-    background: #fafafa;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-height: 100vh;
-    box-sizing: border-box;
-    color: #222;
-  }
-  h1 {
-    text-align: center;
-    margin-bottom: 20px;
-    font-weight: 600;
-    max-width: 400px;
-  }
-  #qr-reader {
-    width: 100%;
-    max-width: 400px;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    background: #000;
-    margin-bottom: 20px;
-  }
-  #order-details {
-    max-width: 400px;
-    width: 100%;
-    background: #fff;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-    white-space: pre-wrap;
-    font-size: 1.1rem;
-    margin-bottom: 20px;
-    min-height: 80px;
-    user-select: text;
-  }
-  .btn-group {
-    display: flex;
-    gap: 15px;
-    max-width: 400px;
-    width: 100%;
-    margin-bottom: 15px;
-  }
-  button {
-    flex: 1;
-    padding: 14px 0;
-    font-size: 1.2rem;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    color: white;
-    box-shadow: 0 4px 10px rgba(0,123,255,0.3);
-    transition: background-color 0.3s ease;
-  }
-  button:disabled {
-    background-color: #aaa;
-    cursor: not-allowed;
-    box-shadow: none;
-  }
-  #btn-end {
-    background-color: #28a745;
-  }
-  #btn-end:hover:not(:disabled) {
-    background-color: #218838;
-  }
-  #btn-incomplete {
-    background-color: #dc3545;
-  }
-  #btn-incomplete:hover:not(:disabled) {
-    background-color: #c82333;
-  }
-  #comment-section {
-    max-width: 400px;
-    width: 100%;
-    display: none;
-    flex-direction: column;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  #comment-section textarea {
-    width: 100%;
-    padding: 10px;
-    font-size: 1rem;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    resize: vertical;
-    min-height: 80px;
-  }
-  #btn-submit-comment {
-    background-color: #007bff;
-    padding: 12px;
-    font-size: 1.1rem;
-    border-radius: 8px;
-    border: none;
-    color: white;
-    cursor: pointer;
-    box-shadow: 0 4px 10px rgba(0,123,255,0.3);
-    transition: background-color 0.3s ease;
-  }
-  #btn-submit-comment:hover {
-    background-color: #0056b3;
-  }
-  #message {
-    max-width: 400px;
-    width: 100%;
-    min-height: 24px;
-    text-align: center;
-    font-weight: 600;
-  }
-  #message.error {
-    color: #dc3545;
-  }
-  #message.success {
-    color: #28a745;
-  }
-</style>
-</head>
-<body>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Order Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-<h1>Order QR Scanner</h1>
+        // Global variables for Firebase
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-<div id="qr-reader"></div>
+        let app, db, auth;
+        let userId = null;
+        let isAuthReady = false;
 
-<div id="order-details">No order scanned yet.</div>
+        // Ensure Firebase is initialized
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
 
-<div class="btn-group">
-  <button id="btn-end" disabled>End (Complete Task)</button>
-  <button id="btn-incomplete" disabled>Incomplete</button>
-</div>
-
-<div id="comment-section">
-  <textarea id="comment-input" placeholder="Enter comment for incomplete task..."></textarea>
-  <button id="btn-submit-comment">Submit Comment</button>
-</div>
-
-<div id="message"></div>
-
-<script>
-  const qrReader = new Html5Qrcode("qr-reader");
-  const orderDetailsElem = document.getElementById("order-details");
-  const btnEnd = document.getElementById("btn-end");
-  const btnIncomplete = document.getElementById("btn-incomplete");
-  const commentSection = document.getElementById("comment-section");
-  const commentInput = document.getElementById("comment-input");
-  const btnSubmitComment = document.getElementById("btn-submit-comment");
-  const messageElem = document.getElementById("message");
-
-  let currentOrder = null;
-
-  function showMessage(text, isError = false) {
-    messageElem.textContent = text;
-    messageElem.className = isError ? "error" : "success";
-  }
-
-  function clearMessage() {
-    messageElem.textContent = "";
-    messageElem.className = "";
-  }
-
-  function resetUI() {
-    orderDetailsElem.textContent = "No order scanned yet.";
-    btnEnd.disabled = true;
-    btnIncomplete.disabled = true;
-    commentSection.style.display = "none";
-    commentInput.value = "";
-    clearMessage();
-    currentOrder = null;
-  }
-
-  async function startScanner() {
-    try {
-      const cameras = await Html5Qrcode.getCameras();
-      if (!cameras || cameras.length === 0) {
-        alert("No camera found.");
-        return;
-      }
-      // Try to select the rear camera if available
-      const rearCamera = cameras.find(camera => camera.label.toLowerCase().includes("back")) || cameras[0];
-      console.log("Using camera:", rearCamera.label);
-      await qrReader.start(
-        { deviceId: { exact: rearCamera.id } },
-        { fps: 10, qrbox: 250 },
-        (decodedText) => {
-          qrReader.pause();
-          processQRCode(decodedText);
-        },
-        (errorMessage) => {
-          // Ignoring scan failures to keep UI smooth
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    // Listen for real-time data changes
+                    if (db) {
+                        const ordersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/orders`));
+                        onSnapshot(ordersQuery, (snapshot) => {
+                            orders = [];
+                            snapshot.forEach(doc => {
+                                orders.push({ id: doc.id, ...doc.data() });
+                            });
+                            renderOrders();
+                        });
+                    }
+                } else {
+                    userId = null;
+                    isAuthReady = true;
+                    // Handle sign-in for users with custom tokens
+                    if (initialAuthToken) {
+                        try {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } catch (error) {
+                            console.error("Custom token sign-in failed:", error);
+                            // Fallback to anonymous sign-in if custom token fails
+                            try {
+                                await signInAnonymously(auth);
+                            } catch (error) {
+                                console.error("Anonymous sign-in failed:", error);
+                            }
+                        }
+                    } else {
+                        // Sign in anonymously if no custom token is provided
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (error) {
+                            console.error("Anonymous sign-in failed:", error);
+                        }
+                    }
+                }
+            });
         }
-      );
-    } catch (err) {
-      showMessage("Failed to start camera: " + err, true);
-      console.error("Camera start failed:", err);
-    }
-  }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #reader {
+            width: 100%;
+            max-width: 500px;
+            margin: auto;
+        }
+        /* Hides the default QR code library's dashboard buttons */
+        #reader__dashboard_section_csr_button {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 min-h-screen flex flex-col items-center">
 
-  function processQRCode(decodedText) {
-    try {
-      let data;
-      try {
-        data = JSON.parse(decodedText);
-      } catch {
-        // If not JSON, treat decodedText as orderNumber only
-        data = { orderNumber: decodedText.trim(), customerName: "Unknown" };
-      }
+    <!-- Main Container -->
+    <div class="bg-white p-6 rounded-3xl shadow-xl w-full max-w-4xl mx-auto flex flex-col space-y-6">
 
-      if (!data.orderNumber) {
-        throw new Error("Missing orderNumber");
-      }
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-4">QR Order Tracker</h1>
 
-      currentOrder = data;
-      orderDetailsElem.textContent =
-        `Order Number: ${data.orderNumber}\nCustomer: ${data.customerName || "Unknown"}`;
+        <!-- Login Section -->
+        <div id="login-section" class="flex flex-col items-center justify-center space-y-4 p-8 rounded-lg shadow-inner bg-gray-50">
+            <h2 class="text-2xl font-semibold text-gray-800">Staff Login</h2>
+            <input id="email-input" type="email" placeholder="Email" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input id="password-input" type="password" placeholder="Password" class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="login-btn" class="w-full p-3 bg-blue-500 text-white font-semibold rounded-lg shadow-md hover:bg-blue-600 transition-colors">Login</button>
+            <div id="login-error" class="text-red-500 text-sm mt-2 hidden"></div>
+        </div>
 
-      btnEnd.disabled = false;
-      btnIncomplete.disabled = false;
-      commentSection.style.display = "none";
-      commentInput.value = "";
-      clearMessage();
-    } catch (err) {
-      showMessage("Invalid QR code data. Please scan a valid order.", true);
-      orderDetailsElem.textContent = "No order scanned yet.";
-      btnEnd.disabled = true;
-      btnIncomplete.disabled = true;
-      currentOrder = null;
-      qrReader.resume();
-      console.error("QR Processing error:", err);
-    }
-  }
+        <!-- Main App Content (hidden initially) -->
+        <div id="app-content" class="flex flex-col space-y-6 hidden">
+            <div id="user-info" class="text-center text-sm text-gray-500">Logged in as: <span id="user-id-display" class="font-mono"></span></div>
+            <!-- QR Scanner Section -->
+            <div class="flex flex-col items-center justify-center space-y-4">
+                <p class="text-center text-gray-600">Scan a QR code to capture a new order.</p>
+                <div id="reader" class="rounded-lg overflow-hidden shadow-inner"></div>
+                <div id="scanned-info" class="w-full text-center p-4 bg-blue-50 rounded-lg hidden">
+                    <p class="text-sm font-semibold text-gray-700">Scanned Order ID:</p>
+                    <p id="scanned-do" class="text-lg font-bold text-blue-800 break-words mt-1"></p>
+                    <p class="text-sm font-semibold text-gray-700 mt-2">Scanned Name:</p>
+                    <p id="scanned-name" class="text-lg font-bold text-blue-800 break-words mt-1"></p>
+                </div>
+            </div>
+            
+            <!-- Order Status Buttons -->
+            <div id="status-actions" class="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 items-center justify-center hidden">
+                <button id="complete-btn" class="w-full sm:w-1/2 p-3 bg-green-500 text-white font-semibold rounded-lg shadow-md hover:bg-green-600 transition-colors">
+                    Complete
+                </button>
+                <button id="incomplete-btn" class="w-full sm:w-1/2 p-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition-colors">
+                    Incomplete
+                </button>
+            </div>
 
-  btnEnd.addEventListener("click", () => {
-    if (!currentOrder) return;
-    console.log("Completing order:", currentOrder.orderNumber);
-    clearMessage();
-    btnEnd.disabled = true;
-    btnIncomplete.disabled = true;
-    commentSection.style.display = "none";
+            <!-- Incomplete Comment Modal -->
+            <div id="comment-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-center justify-center hidden p-4">
+                <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-800">Add a Comment</h2>
+                    <textarea id="comment-input" rows="4" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    <div class="flex justify-end space-x-3 mt-4">
+                        <button id="cancel-comment" class="py-2 px-4 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 transition-colors">
+                            Cancel
+                        </button>
+                        <button id="submit-comment" class="py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">
+                            Submit
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-    showMessage("Completing order...");
+            <!-- Confirmation Modal for Clearing History -->
+            <div id="confirmation-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 z-50 flex items-center justify-center hidden p-4">
+                <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                    <h2 id="confirmation-title" class="text-xl font-semibold mb-4 text-gray-800">Clear History</h2>
+                    <p id="confirmation-text" class="text-gray-600 mb-6">Are you sure you want to clear all data? This action cannot be undone.</p>
+                    <div class="flex justify-center space-x-4">
+                        <button id="cancel-clear" class="py-2 px-4 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 transition-colors">
+                            Cancel
+                        </button>
+                        <button id="confirm-clear" class="py-2 px-4 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors">
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-    fakeApiUpdate({
-      orderNumber: currentOrder.orderNumber,
-      status: "completed",
-    })
-      .then(() => {
-        console.log("Order completed successfully");
-        showMessage(`Order ${currentOrder.orderNumber} marked as completed.`);
-        qrReader.clear()
-          .then(() => {
-            resetUI();
-            startScanner();
-          })
-          .catch(err => {
-            console.error("Failed to clear scanner:", err);
-            resetUI();
-            startScanner();
-          });
-      })
-      .catch((err) => {
-        console.error("Failed to update order status:", err);
-        showMessage("Failed to update order status.", true);
-        btnEnd.disabled = false;
-        btnIncomplete.disabled = false;
-      });
-  });
+            <!-- Orders List and Export Section -->
+            <div class="mt-8">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-800">Captured Orders</h2>
+                    <div class="flex space-x-2">
+                        <button id="export-btn" class="py-2 px-4 bg-gray-800 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 transition-colors">
+                            Export to Excel
+                        </button>
+                        <button id="clear-btn" class="py-2 px-4 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition-colors">
+                            Clear History
+                        </button>
+                    </div>
+                </div>
 
-  btnIncomplete.addEventListener("click", () => {
-    if (!currentOrder) return;
-    commentSection.style.display = "flex";
-    commentInput.focus();
-    clearMessage();
-  });
+                <div class="overflow-x-auto rounded-lg shadow-md">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DO No</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comment</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Order rows will be dynamically inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
 
-  btnSubmitComment.addEventListener("click", () => {
-    const comment = commentInput.value.trim();
-    if (!comment) {
-      showMessage("Please enter a comment.", true);
-      return;
-    }
-    clearMessage();
-    btnEnd.disabled = true;
-    btnIncomplete.disabled = true;
-    btnSubmitComment.disabled = true;
+    </div>
 
-    showMessage("Updating order as incomplete...");
+    <script type="module">
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    fakeApiUpdate({
-      orderNumber: currentOrder.orderNumber,
-      status: "incomplete",
-      comment,
-    })
-      .then(() => {
-        console.log("Order marked as incomplete");
-        showMessage(`Order ${currentOrder.orderNumber} marked as incomplete.`);
-        qrReader.clear()
-          .then(() => {
-            resetUI();
-            btnSubmitComment.disabled = false;
-            startScanner();
-          })
-          .catch(err => {
-            console.error("Failed to clear scanner:", err);
-            resetUI();
-            btnSubmitComment.disabled = false;
-            startScanner();
-          });
-      })
-      .catch((err) => {
-        console.error("Failed to update order status:", err);
-        showMessage("Failed to update order status.", true);
-        btnEnd.disabled = false;
-        btnIncomplete.disabled = false;
-        btnSubmitComment.disabled = false;
-      });
-  });
+        // Firebase-related variables from the head script
+        let auth, db, userId, isAuthReady;
 
-  // Simulated API update function that always resolves successfully
-  function fakeApiUpdate(data) {
-    console.log("Simulated API request:", data);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 1000);
-    });
-  }
+        // Wait for Firebase to be ready before proceeding
+        const waitForFirebase = new Promise(resolve => {
+            const check = () => {
+                if (window.auth && window.db && window.isAuthReady) {
+                    auth = window.auth;
+                    db = window.db;
+                    userId = window.userId;
+                    isAuthReady = window.isAuthReady;
+                    resolve();
+                } else {
+                    setTimeout(check, 50);
+                }
+            };
+            check();
+        });
 
-  window.onload = () => {
-    resetUI();
-    startScanner();
-  };
-</script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Wait for Firebase to be initialized and auth state to be checked
+            await waitForFirebase;
 
+            const reader = document.getElementById('reader');
+            const scannedInfo = document.getElementById('scanned-info');
+            const scannedDoDisplay = document.getElementById('scanned-do');
+            const scannedNameDisplay = document.getElementById('scanned-name');
+            const statusActions = document.getElementById('status-actions');
+            const completeBtn = document.getElementById('complete-btn');
+            const incompleteBtn = document.getElementById('incomplete-btn');
+            const commentModal = document.getElementById('comment-modal');
+            const commentInput = document.getElementById('comment-input');
+            const submitCommentBtn = document.getElementById('submit-comment');
+            const cancelCommentBtn = document.getElementById('cancel-comment');
+            const exportBtn = document.getElementById('export-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const ordersTableBody = document.getElementById('orders-table-body');
+            const confirmationModal = document.getElementById('confirmation-modal');
+            const confirmationTitle = document.getElementById('confirmation-title');
+            const confirmationText = document.getElementById('confirmation-text');
+            const confirmClearBtn = document.getElementById('confirm-clear');
+            const cancelClearBtn = document.getElementById('cancel-clear');
+            const loginSection = document.getElementById('login-section');
+            const appContent = document.getElementById('app-content');
+            const loginBtn = document.getElementById('login-btn');
+            const emailInput = document.getElementById('email-input');
+            const passwordInput = document.getElementById('password-input');
+            const loginError = document.getElementById('login-error');
+            const userIdDisplay = document.getElementById('user-id-display');
+
+            let orders = [];
+            let currentOrderID = null;
+            let currentName = null;
+            let html5QrCode;
+
+            // Handle UI state based on authentication
+            const updateUI = (user) => {
+                if (user) {
+                    loginSection.classList.add('hidden');
+                    appContent.classList.remove('hidden');
+                    userIdDisplay.textContent = user.uid;
+                    startScanner();
+                } else {
+                    loginSection.classList.remove('hidden');
+                    appContent.classList.add('hidden');
+                    // Stop scanner if logged out
+                    if (html5QrCode && html5QrCode.isScanning) {
+                        html5QrCode.stop().then(() => {
+                            console.log("QR scanning stopped.");
+                        }).catch(err => {
+                            console.error("Error stopping scanner:", err);
+                        });
+                    }
+                }
+            };
+
+            // Login functionality
+            loginBtn.addEventListener('click', async () => {
+                const email = emailInput.value;
+                const password = passwordInput.value;
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    loginError.classList.add('hidden');
+                } catch (error) {
+                    let errorMessage = "An unknown error occurred.";
+                    switch(error.code) {
+                        case 'auth/invalid-email':
+                            errorMessage = "Invalid email format.";
+                            break;
+                        case 'auth/user-not-found':
+                        case 'auth/wrong-password':
+                            errorMessage = "Incorrect email or password.";
+                            break;
+                        case 'auth/network-request-failed':
+                            errorMessage = "Network error. Please check your connection.";
+                            break;
+                        default:
+                            errorMessage = error.message;
+                            break;
+                    }
+                    loginError.textContent = errorMessage;
+                    loginError.classList.remove('hidden');
+                }
+            });
+
+            // Listen for auth state changes to update UI
+            onAuthStateChanged(auth, updateUI);
+
+            // Initialize the QR code scanner
+            function startScanner() {
+                html5QrCode = new Html5Qrcode("reader");
+                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+                let lastScannedText = null;
+                let debounceTimeout = null;
+                
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText, decodedResult) => {
+                        if (lastScannedText === decodedText) {
+                            return;
+                        }
+                        if (debounceTimeout) {
+                            clearTimeout(debounceTimeout);
+                        }
+                        lastScannedText = decodedText;
+                        debounceTimeout = setTimeout(() => {
+                            const trimmedText = decodedText.trim();
+                            let doNo = trimmedText;
+                            let name = 'N/A';
+
+                            // Improved parsing logic to handle various formats
+                            if (trimmedText.includes(',')) {
+                                const parts = trimmedText.split(',');
+                                doNo = parts[0] ? parts[0].trim() : 'N/A';
+                                name = parts[1] ? parts[1].trim() : 'N/A';
+                            }
+                            else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
+                                const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
+                                const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
+                                
+                                doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
+                                name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
+                            }
+                            
+                            // Remove any surrounding quotes from the extracted values
+                            doNo = doNo.replace(/^"|"$/g, '');
+                            name = name.replace(/^"|"$/g, '');
+
+                            currentOrderID = doNo;
+                            currentName = name;
+
+                            scannedDoDisplay.textContent = currentOrderID;
+                            scannedNameDisplay.textContent = currentName;
+                            scannedInfo.classList.remove('hidden');
+                            statusActions.classList.remove('hidden');
+                            
+                            html5QrCode.pause();
+                        }, 500);
+                    },
+                    (errorMessage) => {
+                        // Error callback is expected for a continuous scan.
+                    }
+                ).catch((err) => {
+                    console.error(`Unable to start scanning, make sure camera is available.`, err);
+                    const messageBox = document.createElement('div');
+                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                    messageBox.innerHTML = `
+                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-800">Error</h2>
+                            <p class="text-gray-600">Unable to start the camera. Please ensure camera permissions are granted.</p>
+                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(messageBox);
+                });
+            }
+
+            // Render orders to the table
+            function renderOrders() {
+                ordersTableBody.innerHTML = '';
+                if (orders.length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="6" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
+                    ordersTableBody.appendChild(row);
+                    return;
+                }
+                orders.forEach(order => {
+                    const row = document.createElement('tr');
+                    const statusColor = order.status === 'Complete' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                    const comment = order.comment ? order.comment : '—';
+                    const name = order.name ? order.name : '—';
+                    row.innerHTML = `
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${order.doNo}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${name}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span></td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${comment}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.date}</td>
+                        <td class="px-4 py-3 whitespace-now-empty text-sm text-gray-500">${order.time}</td>
+                    `;
+                    ordersTableBody.appendChild(row);
+                });
+            }
+
+            // Add new order function
+            async function addNewOrder(status, comment = null) {
+                if (!currentOrderID || !userId) return;
+                const now = new Date();
+                const newOrderRef = doc(collection(db, `artifacts/${window.appId}/users/${userId}/orders`));
+                const orderData = {
+                    doNo: currentOrderID,
+                    name: currentName,
+                    status: status,
+                    comment: comment,
+                    date: now.toLocaleDateString(),
+                    time: now.toLocaleTimeString(),
+                    timestamp: now.getTime()
+                };
+                try {
+                    await setDoc(newOrderRef, orderData);
+                    resetUI();
+                    if (html5QrCode) {
+                        html5QrCode.resume();
+                    }
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                }
+            }
+
+            // Delete all orders for the current user
+            async function clearAllOrders() {
+                if (!userId) return;
+                const ordersRef = collection(db, `artifacts/${window.appId}/users/${userId}/orders`);
+                const snapshot = await getDocs(ordersRef);
+                const deletePromises = [];
+                snapshot.forEach(doc => {
+                    deletePromises.push(deleteDoc(doc.ref));
+                });
+                try {
+                    await Promise.all(deletePromises);
+                    console.log("All documents successfully deleted!");
+                } catch (e) {
+                    console.error("Error clearing documents: ", e);
+                }
+            }
+
+            // Reset UI after an order is processed
+            function resetUI() {
+                currentOrderID = null;
+                currentName = null;
+                scannedInfo.classList.add('hidden');
+                statusActions.classList.add('hidden');
+            }
+
+            // Event Listeners
+            completeBtn.addEventListener('click', () => {
+                addNewOrder('Complete');
+            });
+
+            incompleteBtn.addEventListener('click', () => {
+                commentModal.classList.remove('hidden');
+            });
+
+            submitCommentBtn.addEventListener('click', () => {
+                const comment = commentInput.value.trim();
+                addNewOrder('Incomplete', comment);
+                commentInput.value = '';
+                commentModal.classList.add('hidden');
+            });
+
+            cancelCommentBtn.addEventListener('click', () => {
+                commentInput.value = '';
+                commentModal.classList.add('hidden');
+                resetUI();
+                if (html5QrCode) {
+                    html5QrCode.resume();
+                }
+            });
+            
+            // Clear History Button - First Confirmation
+            clearBtn.addEventListener('click', () => {
+                if (orders.length === 0) {
+                    const messageBox = document.createElement('div');
+                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                    messageBox.innerHTML = `
+                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
+                            <p class="text-gray-600">There is no history to clear.</p>
+                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(messageBox);
+                    return;
+                }
+                confirmationTitle.textContent = "Clear History";
+                confirmationText.textContent = "Are you sure you want to clear all data? This action cannot be undone.";
+                confirmClearBtn.textContent = "Confirm";
+                confirmClearBtn.className = 'py-2 px-4 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors';
+                confirmationModal.classList.remove('hidden');
+            });
+            
+            // Second Confirmation and Final Action
+            confirmClearBtn.addEventListener('click', async () => {
+                if (confirmClearBtn.textContent === "Confirm") {
+                    confirmationTitle.textContent = "Final Confirmation";
+                    confirmationText.textContent = "This will permanently delete all data. Are you absolutely sure?";
+                    confirmClearBtn.textContent = "Clear All";
+                    confirmClearBtn.className = 'py-2 px-4 bg-red-700 text-white font-medium rounded-lg hover:bg-red-800 transition-colors';
+                } else if (confirmClearBtn.textContent === "Clear All") {
+                    await clearAllOrders();
+                    orders = [];
+                    renderOrders();
+                    confirmationModal.classList.add('hidden');
+                }
+            });
+
+            // Cancel Confirmation
+            cancelClearBtn.addEventListener('click', () => {
+                confirmationModal.classList.add('hidden');
+            });
+
+            // Export to CSV functionality
+            exportBtn.addEventListener('click', () => {
+                if (orders.length === 0) {
+                    const messageBox = document.createElement('div');
+                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                    messageBox.innerHTML = `
+                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
+                            <p class="text-gray-600">No data to export yet.</p>
+                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(messageBox);
+                    return;
+                }
+                let csv = 'OrderID,Name,Status,Comment,Date,Time\n';
+                orders.forEach(order => {
+                    const doNo = order.doNo ? order.doNo : '';
+                    const name = order.name ? order.name.replace(/"/g, '""') : '';
+                    const comment = order.comment ? order.comment.replace(/"/g, '""') : '—';
+                    csv += `"DO no: "${doNo}"` + `,"Name: "${name}"` + `,${order.status},"${comment}",${order.date},${order.time}\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "orders.csv");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+
+        });
+    </script>
 </body>
 </html>
