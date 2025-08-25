@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>QR Code Order Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    #qr-reader {
+      width: 300px;
+      margin-bottom: 10px;
+    }
+    #order-details {
+      margin: 15px 0;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Scan QR Code for Order Details</h2>
+  <div id="qr-reader"></div>
+
+  <div id="order-details">No order scanned yet.</div>
+
+  <button id="end-btn" disabled>End Order</button>
+
+  <script>
+    let currentOrder = null;
+
+    function onScanSuccess(decodedText, decodedResult) {
+      // Stop scanning after success
+      html5QrcodeScanner.clear();
+
+      // Assuming the QR code contains JSON string with order details
+      try {
+        currentOrder = JSON.parse(decodedText);
+        document.getElementById('order-details').textContent = 
+          `Order ID: ${currentOrder.id}\nCustomer: ${currentOrder.customer}\nItems: ${JSON.stringify(currentOrder.items)}`;
+        document.getElementById('end-btn').disabled = false;
+      } catch (e) {
+        alert("Invalid QR code data");
+      }
+    }
+
+    function onScanFailure(error) {
+      // You can log scan errors here if needed
+    }
+
+    let html5QrcodeScanner = new Html5Qrcode("qr-reader");
+    html5QrcodeScanner.start(
+      { facingMode: "environment" }, 
+      { fps: 10, qrbox: 250 },
+      onScanSuccess,
+      onScanFailure
+    ).catch(err => {
+      console.error("Unable to start scanning:", err);
+    });
+
+    document.getElementById('end-btn').addEventListener('click', () => {
+      if (!currentOrder) return;
+
+      // Example: Call an API to update order status
+      fetch('/api/update-order-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: currentOrder.id, status: 'completed' })
+      })
+      .then(response => response.json())
+      .then(data => {
+        alert(`Order ${currentOrder.id} marked as complete!`);
+        document.getElementById('order-details').textContent = 'No order scanned yet.';
+        document.getElementById('end-btn').disabled = true;
+        currentOrder = null;
+
+        // Restart scanning for the next order
+        html5QrcodeScanner.start(
+          { facingMode: "environment" }, 
+          { fps: 10, qrbox: 250 },
+          onScanSuccess,
+          onScanFailure
+        );
+      })
+      .catch(err => {
+        alert('Failed to update order status.');
+        console.error(err);
+      });
+    });
+  </script>
+
+</body>
+</html>
