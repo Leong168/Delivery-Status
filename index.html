@@ -3,6 +3,308 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Order QR Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+        Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      color: #222;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      font-weight: 600;
+      max-width: 400px;
+    }
+    #qr-reader {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      background: #000;
+      margin-bottom: 20px;
+    }
+    #order-details {
+      max-width: 400px;
+      width: 100%;
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      white-space: pre-wrap;
+      font-size: 1.1rem;
+      margin-bottom: 20px;
+      min-height: 80px;
+      user-select: text;
+    }
+    .btn-group {
+      display: flex;
+      gap: 15px;
+      max-width: 400px;
+      width: 100%;
+      margin-bottom: 15px;
+    }
+    button {
+      flex: 1;
+      padding: 14px 0;
+      font-size: 1.2rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      color: white;
+      box-shadow: 0 4px 10px rgba(0,123,255,0.3);
+      transition: background-color 0.3s ease;
+    }
+    button:disabled {
+      background-color: #aaa;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    #btn-end {
+      background-color: #28a745;
+    }
+    #btn-end:hover:not(:disabled) {
+      background-color: #218838;
+    }
+    #btn-incomplete {
+      background-color: #dc3545;
+    }
+    #btn-incomplete:hover:not(:disabled) {
+      background-color: #c82333;
+    }
+    #comment-section {
+      max-width: 400px;
+      width: 100%;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    #comment-section textarea {
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      resize: vertical;
+      min-height: 80px;
+    }
+    #btn-submit-comment {
+      background-color: #007bff;
+      padding: 12px;
+      font-size: 1.1rem;
+      border-radius: 8px;
+      border: none;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,123,255,0.3);
+      transition: background-color 0.3s ease;
+    }
+    #btn-submit-comment:hover {
+      background-color: #0056b3;
+    }
+    #message {
+      max-width: 400px;
+      width: 100%;
+      min-height: 24px;
+      text-align: center;
+      font-weight: 600;
+    }
+    #message.error {
+      color: #dc3545;
+    }
+    #message.success {
+      color: #28a745;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Order QR Scanner</h1>
+
+  <div id="qr-reader"></div>
+
+  <div id="order-details">No order scanned yet.</div>
+
+  <div class="btn-group">
+    <button id="btn-end" disabled>End (Complete Task)</button>
+    <button id="btn-incomplete" disabled>Incomplete</button>
+  </div>
+
+  <div id="comment-section">
+    <textarea id="comment-input" placeholder="Enter comment for incomplete task..."></textarea>
+    <button id="btn-submit-comment">Submit Comment</button>
+  </div>
+
+  <div id="message"></div>
+
+  <script>
+    const qrReader = new Html5Qrcode("qr-reader");
+    const orderDetailsElem = document.getElementById("order-details");
+    const btnEnd = document.getElementById("btn-end");
+    const btnIncomplete = document.getElementById("btn-incomplete");
+    const commentSection = document.getElementById("comment-section");
+    const commentInput = document.getElementById("comment-input");
+    const btnSubmitComment = document.getElementById("btn-submit-comment");
+    const messageElem = document.getElementById("message");
+
+    let currentOrder = null;
+
+    function showMessage(text, isError = false) {
+      messageElem.textContent = text;
+      messageElem.className = isError ? "error" : "success";
+    }
+
+    function clearMessage() {
+      messageElem.textContent = "";
+      messageElem.className = "";
+    }
+
+    function resetUI() {
+      orderDetailsElem.textContent = "No order scanned yet.";
+      btnEnd.disabled = true;
+      btnIncomplete.disabled = true;
+      commentSection.style.display = "none";
+      commentInput.value = "";
+      clearMessage();
+      currentOrder = null;
+      startScanner();
+    }
+
+    function startScanner() {
+      qrReader.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 250 },
+        (decodedText) => {
+          qrReader.pause(); // pause scanning while processing
+
+          try {
+            const data = JSON.parse(decodedText);
+
+            if (!data.orderNumber || !data.customerName) {
+              throw new Error("Missing orderNumber or customerName");
+            }
+
+            currentOrder = data;
+            orderDetailsElem.textContent = 
+              `Order Number: ${data.orderNumber}\nCustomer: ${data.customerName}`;
+
+            btnEnd.disabled = false;
+            btnIncomplete.disabled = false;
+            commentSection.style.display = "none";
+            commentInput.value = "";
+            clearMessage();
+          } catch (err) {
+            showMessage("Invalid QR code data. Please scan a valid order.", true);
+            orderDetailsElem.textContent = "No order scanned yet.";
+            btnEnd.disabled = true;
+            btnIncomplete.disabled = true;
+            currentOrder = null;
+            qrReader.resume();
+          }
+        },
+        (errorMessage) => {
+          // Ignoring scan failures to avoid noisy logs
+        }
+      ).catch((err) => {
+        showMessage("Failed to start camera: " + err, true);
+      });
+    }
+
+    btnEnd.addEventListener("click", () => {
+      if (!currentOrder) return;
+      clearMessage();
+      btnEnd.disabled = true;
+      btnIncomplete.disabled = true;
+      commentSection.style.display = "none";
+
+      showMessage("Completing order...");
+
+      // TODO: Replace with real API call
+      fakeApiUpdate({
+        orderNumber: currentOrder.orderNumber,
+        status: "completed",
+      }).then(() => {
+        showMessage(`Order ${currentOrder.orderNumber} marked as completed.`);
+        qrReader.clear().then(resetUI);
+      }).catch(() => {
+        showMessage("Failed to update order status.", true);
+        btnEnd.disabled = false;
+        btnIncomplete.disabled = false;
+      });
+    });
+
+    btnIncomplete.addEventListener("click", () => {
+      if (!currentOrder) return;
+      commentSection.style.display = "flex";
+      commentInput.focus();
+      clearMessage();
+    });
+
+    btnSubmitComment.addEventListener("click", () => {
+      const comment = commentInput.value.trim();
+      if (!comment) {
+        showMessage("Please enter a comment.", true);
+        return;
+      }
+      clearMessage();
+      btnEnd.disabled = true;
+      btnIncomplete.disabled = true;
+      btnSubmitComment.disabled = true;
+
+      showMessage("Updating order as incomplete...");
+
+      // TODO: Replace with real API call
+      fakeApiUpdate({
+        orderNumber: currentOrder.orderNumber,
+        status: "incomplete",
+        comment,
+      }).then(() => {
+        showMessage(`Order ${currentOrder.orderNumber} marked as incomplete.`);
+        qrReader.clear().then(() => {
+          resetUI();
+          btnSubmitComment.disabled = false;
+        });
+      }).catch(() => {
+        showMessage("Failed to update order status.", true);
+        btnEnd.disabled = false;
+        btnIncomplete.disabled = false;
+        btnSubmitComment.disabled = false;
+      });
+    });
+
+    // Fake API update function to simulate server response
+    function fakeApiUpdate(data) {
+      console.log("Simulated API request:", data);
+      return new Promise((resolve) => {
+        setTimeout(resolve, 1000); // simulate 1 second network delay
+      });
+    }
+
+    // Start scanning on page load
+    window.onload = () => {
+      startScanner();
+    };
+  </script>
+
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Order Scanner</title>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
