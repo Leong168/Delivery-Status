@@ -60,31 +60,22 @@
 
             // Initialize Firebase and set up auth listener
             if (Object.keys(firebaseConfig).length > 0) {
+                // Initialize Firebase services
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
             
-                // Sign in with custom token or anonymously
-                try {
-                    if (initialAuthToken) {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (error) {
-                    console.error("Initial authentication failed:", error);
-                    loadingScreen.classList.add('hidden');
-                    loginSection.classList.remove('hidden');
-                }
-
+                // Set up authentication state listener
                 onAuthStateChanged(auth, (user) => {
                     loadingScreen.classList.add('hidden');
                     if (user) {
+                        // User is logged in
                         userId = user.uid;
                         loginSection.classList.add('hidden');
                         appContent.classList.remove('hidden');
                         userIdDisplay.textContent = userId;
                         
+                        // Start the QR scanner and Firestore listener
                         if (!scannerStarted) {
                             startScanner();
                             scannerStarted = true;
@@ -100,52 +91,67 @@
                             renderOrders();
                         });
                     } else {
+                        // User is logged out
                         userId = null;
                         loginSection.classList.remove('hidden');
                         appContent.classList.add('hidden');
                     }
                 });
+
+                // Initial sign in with custom token or anonymously
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (error) {
+                    console.error("Initial authentication failed:", error);
+                    loadingScreen.classList.add('hidden');
+                    loginSection.classList.remove('hidden');
+                }
+
+                // Attach login button event listener. This is placed here to ensure 'auth' is defined.
+                loginBtn.addEventListener('click', async () => {
+                    const email = emailInput.value;
+                    const password = passwordInput.value;
+
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = 'Logging in...';
+                    loginError.classList.add('hidden');
+
+                    try {
+                        await signInWithEmailAndPassword(auth, email, password);
+                    } catch (error) {
+                        let errorMessage = "An unknown error occurred.";
+                        switch(error.code) {
+                            case 'auth/invalid-email':
+                                errorMessage = "Invalid email format.";
+                                break;
+                            case 'auth/user-not-found':
+                            case 'auth/wrong-password':
+                                errorMessage = "Incorrect email or password.";
+                                break;
+                            case 'auth/network-request-failed':
+                                errorMessage = "Network error. Please check your connection.";
+                                break;
+                            default:
+                                errorMessage = error.message;
+                                break;
+                        }
+                        loginError.textContent = errorMessage;
+                        loginError.classList.remove('hidden');
+                    } finally {
+                        loginBtn.disabled = false;
+                        loginBtn.textContent = 'Login';
+                    }
+                });
+
             } else {
                 console.error("Firebase configuration is missing.");
                 loadingScreen.classList.add('hidden');
                 loginSection.classList.remove('hidden');
             }
-
-            // Attach login button event listener once and for all
-            loginBtn.addEventListener('click', async () => {
-                const email = emailInput.value;
-                const password = passwordInput.value;
-
-                loginBtn.disabled = true;
-                loginBtn.textContent = 'Logging in...';
-                loginError.classList.add('hidden');
-
-                try {
-                    await signInWithEmailAndPassword(auth, email, password);
-                } catch (error) {
-                    let errorMessage = "An unknown error occurred.";
-                    switch(error.code) {
-                        case 'auth/invalid-email':
-                            errorMessage = "Invalid email format.";
-                            break;
-                        case 'auth/user-not-found':
-                        case 'auth/wrong-password':
-                            errorMessage = "Incorrect email or password.";
-                            break;
-                        case 'auth/network-request-failed':
-                            errorMessage = "Network error. Please check your connection.";
-                            break;
-                        default:
-                            errorMessage = error.message;
-                            break;
-                    }
-                    loginError.textContent = errorMessage;
-                    loginError.classList.remove('hidden');
-                } finally {
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = 'Login';
-                }
-            });
 
             // All other event listeners for the main app
             completeBtn.addEventListener('click', () => {
