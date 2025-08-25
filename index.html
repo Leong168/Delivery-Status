@@ -28,24 +28,7 @@
         let html5QrCode;
         let scannerStarted = false;
 
-        // Initialize Firebase services
-        if (Object.keys(firebaseConfig).length > 0) {
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            
-            // Start the authentication process immediately
-            if (initialAuthToken) {
-                signInWithCustomToken(auth, initialAuthToken).catch(error => {
-                    console.error("Custom token sign-in failed, falling back to anonymous:", error);
-                    signInAnonymously(auth);
-                });
-            } else {
-                signInAnonymously(auth);
-            }
-        }
-        
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             // Get all DOM elements after the document has loaded
             const reader = document.getElementById('reader');
             const scannedInfo = document.getElementById('scanned-info');
@@ -75,36 +58,58 @@
             const userIdDisplay = document.getElementById('user-id-display');
             const loadingScreen = document.getElementById('loading-screen');
 
-            // Handle UI state and set up listeners based on authentication
-            onAuthStateChanged(auth, (user) => {
-                loadingScreen.classList.add('hidden'); // Hide loading screen once auth state is determined
-                if (user) {
-                    userId = user.uid;
-                    loginSection.classList.add('hidden');
-                    appContent.classList.remove('hidden');
-                    userIdDisplay.textContent = userId;
-                    
-                    if (!scannerStarted) {
-                        startScanner();
-                        scannerStarted = true;
+            // Initialize Firebase and set up auth listener
+            if (Object.keys(firebaseConfig).length > 0) {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            
+                // Sign in with custom token or anonymously
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
                     }
-                    
-                    const ordersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/orders`));
-                    onSnapshot(ordersQuery, (snapshot) => {
-                        orders = [];
-                        snapshot.forEach(doc => {
-                            orders.push({ id: doc.id, ...doc.data() });
-                        });
-                        orders.sort((a, b) => b.timestamp - a.timestamp);
-                        renderOrders();
-                    });
-                    
-                } else {
-                    userId = null;
+                } catch (error) {
+                    console.error("Initial authentication failed:", error);
+                    loadingScreen.classList.add('hidden');
                     loginSection.classList.remove('hidden');
-                    appContent.classList.add('hidden');
                 }
-            });
+
+                onAuthStateChanged(auth, (user) => {
+                    loadingScreen.classList.add('hidden');
+                    if (user) {
+                        userId = user.uid;
+                        loginSection.classList.add('hidden');
+                        appContent.classList.remove('hidden');
+                        userIdDisplay.textContent = userId;
+                        
+                        if (!scannerStarted) {
+                            startScanner();
+                            scannerStarted = true;
+                        }
+                        
+                        const ordersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/orders`));
+                        onSnapshot(ordersQuery, (snapshot) => {
+                            orders = [];
+                            snapshot.forEach(doc => {
+                                orders.push({ id: doc.id, ...doc.data() });
+                            });
+                            orders.sort((a, b) => b.timestamp - a.timestamp);
+                            renderOrders();
+                        });
+                    } else {
+                        userId = null;
+                        loginSection.classList.remove('hidden');
+                        appContent.classList.add('hidden');
+                    }
+                });
+            } else {
+                console.error("Firebase configuration is missing.");
+                loadingScreen.classList.add('hidden');
+                loginSection.classList.remove('hidden');
+            }
 
             // Event listener for the login button
             loginBtn.addEventListener('click', async () => {
@@ -383,7 +388,7 @@
 
     <div id="app-container" class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-6 lg:p-10 flex flex-col items-center">
         <!-- Login Section -->
-        <div id="login-section" class="w-full max-w-md p-6 bg-gray-50 rounded-lg shadow-inner">
+        <div id="login-section" class="w-full max-w-md p-6 bg-gray-50 rounded-lg shadow-inner hidden">
             <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Login</h1>
             <div class="space-y-4">
                 <input id="email-input" type="email" placeholder="Email" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
