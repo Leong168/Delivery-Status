@@ -140,7 +140,7 @@
       html5QrcodeScanner = new Html5Qrcode("qr-reader");
 
       html5QrcodeScanner.start(
-        {}, // back camera preferred
+        { facingMode: "environment" }, // back camera preferred
         {
           fps: 10,
           qrbox: { width: 250, height: 250 }
