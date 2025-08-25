@@ -49,6 +49,9 @@
                     <button id="incomplete-btn" class="flex-1 py-3 px-4 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors shadow-md">
                         Mark Incomplete
                     </button>
+                    <button id="rescan-btn" class="flex-1 py-3 px-4 bg-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-400 transition-colors shadow-md">
+                        Rescan
+                    </button>
                 </div>
             </div>
 
@@ -65,7 +68,7 @@
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-100">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order ID</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DO no</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comment</th>
@@ -122,6 +125,7 @@
             const statusActions = document.getElementById('status-actions');
             const completeBtn = document.getElementById('complete-btn');
             const incompleteBtn = document.getElementById('incomplete-btn');
+            const rescanBtn = document.getElementById('rescan-btn');
             const commentModal = document.getElementById('comment-modal');
             const commentInput = document.getElementById('comment-input');
             const submitCommentBtn = document.getElementById('submit-comment');
@@ -168,6 +172,13 @@
 
             incompleteBtn.addEventListener('click', () => {
                 commentModal.classList.remove('hidden');
+            });
+            
+            rescanBtn.addEventListener('click', () => {
+                resetUI();
+                if (html5QrCode) {
+                    html5QrCode.resume();
+                }
             });
 
             submitCommentBtn.addEventListener('click', () => {
@@ -239,7 +250,7 @@
                     document.body.appendChild(messageBox);
                     return;
                 }
-                let csv = 'OrderID,Name,Status,Comment,Date,Time\n';
+                let csv = 'DO no,Name,Status,Comment,Date,Time\n';
                 orders.forEach(order => {
                     const doNo = order.doNo ? order.doNo : '';
                     const name = order.name ? order.name.replace(/"/g, '""') : '';
