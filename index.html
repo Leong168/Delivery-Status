@@ -108,6 +108,15 @@
             </div>
         </div>
     </div>
+
+    <!-- Message Box for Alerts -->
+    <div id="message-box" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+            <h2 id="message-box-title" class="text-xl font-semibold mb-4 text-gray-800"></h2>
+            <p id="message-box-text" class="text-gray-600 mb-6"></p>
+            <button id="message-box-ok" class="py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+        </div>
+    </div>
     
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -138,6 +147,10 @@
             const confirmationText = document.getElementById('confirmation-text');
             const confirmClearBtn = document.getElementById('confirm-clear');
             const cancelClearBtn = document.getElementById('cancel-clear');
+            const messageBox = document.getElementById('message-box');
+            const messageBoxTitle = document.getElementById('message-box-title');
+            const messageBoxText = document.getElementById('message-box-text');
+            const messageBoxOkBtn = document.getElementById('message-box-ok');
 
             let orders = [];
             let currentOrderID = null;
@@ -199,16 +212,7 @@
 
             clearBtn.addEventListener('click', () => {
                 if (orders.length === 0) {
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
-                            <p class="text-gray-600">There is no history to clear.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
+                    showMessageBox("No Data", "There is no history to clear.");
                     return;
                 }
                 confirmationTitle.textContent = "Clear History";
@@ -238,24 +242,15 @@
 
             exportBtn.addEventListener('click', () => {
                 if (orders.length === 0) {
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
-                            <p class="text-gray-600">No data to export yet.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
+                    showMessageBox("No Data", "No data to export yet.");
                     return;
                 }
                 let csv = 'DO no,Name,Status,Comment,Date,Time\n';
                 orders.forEach(order => {
-                    const doNo = order.doNo ? order.doNo : '';
-                    const name = order.name ? order.name.replace(/"/g, '""') : '';
-                    const comment = order.comment ? order.comment.replace(/"/g, '""') : '—';
-                    csv += `"${doNo}",` + `"${name}",` + `${order.status},"${comment}",${order.date},${order.time}\n`;
+                    const doNo = order.doNo ? `"${order.doNo.replace(/"/g, '""')}"` : '""';
+                    const name = order.name ? `"${order.name.replace(/"/g, '""')}"` : '""';
+                    const comment = order.comment ? `"${order.comment.replace(/"/g, '""')}"` : '""';
+                    csv += `${doNo},${name},${order.status},${comment},${order.date},${order.time}\n`;
                 });
 
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -268,65 +263,70 @@
                 link.click();
                 document.body.removeChild(link);
             });
+            
+            messageBoxOkBtn.addEventListener('click', () => {
+                messageBox.classList.add('hidden');
+                // Auto-resume scanner if it was paused to show the message
+                if (html5QrCode && html5QrCode.isScanning) {
+                    html5QrCode.resume();
+                }
+            });
+            
+            function showMessageBox(title, text) {
+                messageBoxTitle.textContent = title;
+                messageBoxText.textContent = text;
+                messageBox.classList.remove('hidden');
+            }
+
+            function hasDuplicateOrder(doNo) {
+                return orders.some(order => order.doNo === doNo);
+            }
 
             function startScanner() {
                 html5QrCode = new Html5Qrcode("reader");
                 const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-                let lastScannedText = null;
-                let debounceTimeout = null;
                 
                 html5QrCode.start(
                     { facingMode: "environment" },
                     config,
                     (decodedText) => {
-                        if (lastScannedText === decodedText) {
+                        const trimmedText = decodedText.trim();
+                        let doNo = trimmedText;
+                        let name = 'N/A';
+                        
+                        // Basic parsing logic to extract DO No and Name
+                        if (trimmedText.includes(',')) {
+                            const parts = trimmedText.split(',');
+                            doNo = parts[0] ? parts[0].trim() : 'N/A';
+                            name = parts[1] ? parts[1].trim() : 'N/A';
+                        } else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
+                            const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
+                            const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
+                            
+                            doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
+                            name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
+                        }
+
+                        // Check for duplicates before proceeding
+                        if (hasDuplicateOrder(doNo)) {
+                            html5QrCode.pause(); // Pause scanner to show message
+                            showMessageBox("Duplicate Scan", "This order has already been scanned.");
                             return;
                         }
-                        if (debounceTimeout) {
-                            clearTimeout(debounceTimeout);
-                        }
-                        lastScannedText = decodedText;
-                        debounceTimeout = setTimeout(() => {
-                            const trimmedText = decodedText.trim();
-                            let doNo = trimmedText;
-                            let name = 'N/A';
-                            
-                            // Basic parsing logic to extract DO No and Name
-                            if (trimmedText.includes(',')) {
-                                const parts = trimmedText.split(',');
-                                doNo = parts[0] ? parts[0].trim() : 'N/A';
-                                name = parts[1] ? parts[1].trim() : 'N/A';
-                            } else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
-                                const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
-                                const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
-                                
-                                doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
-                                name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
-                            }
-                            
-                            currentOrderID = doNo;
-                            currentName = name;
-                            scannedDoDisplay.textContent = currentOrderID;
-                            scannedNameDisplay.textContent = currentName;
-                            scannedInfo.classList.remove('hidden');
-                            statusActions.classList.remove('hidden');
-                            html5QrCode.pause();
-                        }, 500);
+
+                        currentOrderID = doNo;
+                        currentName = name;
+                        scannedDoDisplay.textContent = currentOrderID;
+                        scannedNameDisplay.textContent = currentName;
+                        scannedInfo.classList.remove('hidden');
+                        statusActions.classList.remove('hidden');
+                        html5QrCode.pause();
                     },
                     (errorMessage) => {
                     }
                 ).catch((err) => {
                     console.error(`Unable to start scanning, make sure camera is available.`, err);
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">Error</h2>
-                            <p class="text-gray-600">Unable to start the camera. Please ensure camera permissions are granted.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
+                    showMessageBox("Error", "Unable to start the camera. Please ensure camera permissions are granted.");
                 });
             }
 
