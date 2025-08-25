@@ -286,11 +286,18 @@
 
     // Fake API update function to simulate server response
     function fakeApiUpdate(data) {
-      console.log("Simulated API request:", data);
-      return new Promise((resolve) => {
-        setTimeout(resolve, 1000); // simulate 1 second network delay
-      });
-    }
+  console.log("Simulated API request:", data);
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      if (data.status === "incomplete") {
+        reject(new Error("Simulated failure for incomplete status"));
+      } else {
+        resolve();
+      }
+    }, 1000); // simulate 1 second network delay
+  });
+}
+
 
     // Start scanning on page load
     window.onload = () => {
