@@ -12,7 +12,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global variables provided by the environment
@@ -34,12 +34,22 @@
             db = getFirestore(app);
             auth = getAuth(app);
             
-            // Handle sign-in for users with custom tokens or anonymously
-            if (initialAuthToken) {
-                signInAnonymously(auth);
-            } else {
-                signInAnonymously(auth);
+            // Handle sign-in with custom token or anonymously
+            async function handleAuth() {
+                if (initialAuthToken) {
+                    try {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        console.log("Signed in with custom token.");
+                    } catch (error) {
+                        console.error("Custom token sign-in failed, falling back to anonymous:", error);
+                        signInAnonymously(auth);
+                    }
+                } else {
+                    signInAnonymously(auth);
+                    console.log("Signed in anonymously.");
+                }
             }
+            handleAuth();
         }
         
         document.addEventListener('DOMContentLoaded', () => {
