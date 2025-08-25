@@ -183,8 +183,12 @@
 
     function startScanner() {
       qrReader.start(
-        {}, // default camera
+        /* default camera */ 
+        { facingMode: "environment" }, 
         { fps: 10, qrbox: 250 },
+        ...
+        )
+
         (decodedText) => {
           qrReader.pause(); // pause scanning while processing
           try {
