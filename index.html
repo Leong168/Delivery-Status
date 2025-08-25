@@ -181,54 +181,70 @@
     currentOrder = null;
   }
 
-  function startScanner() {
-    qrReader.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      (decodedText) => {
-        qrReader.pause(); // pause scanning while processing
-
-        try {
-          let data;
-          try {
-            data = JSON.parse(decodedText);
-          } catch {
-            // If not JSON, treat decodedText as orderNumber only
-            data = { orderNumber: decodedText.trim(), customerName: "Unknown" };
-          }
-
-          if (!data.orderNumber) {
-            throw new Error("Missing orderNumber");
-          }
-
-          currentOrder = data;
-          orderDetailsElem.textContent =
-            `Order Number: ${data.orderNumber}\nCustomer: ${data.customerName}`;
-
-          btnEnd.disabled = false;
-          btnIncomplete.disabled = false;
-          commentSection.style.display = "none";
-          commentInput.value = "";
-          clearMessage();
-        } catch (err) {
-          showMessage("Invalid QR code data. Please scan a valid order.", true);
-          orderDetailsElem.textContent = "No order scanned yet.";
-          btnEnd.disabled = true;
-          btnIncomplete.disabled = true;
-          currentOrder = null;
-          qrReader.resume();
-        }
-      },
-      (errorMessage) => {
-        // Ignore scan failures quietly
+  async function startScanner() {
+    try {
+      const cameras = await Html5Qrcode.getCameras();
+      if (!cameras || cameras.length === 0) {
+        alert("No camera found.");
+        return;
       }
-    ).catch((err) => {
+      // Try to select the rear camera if available
+      const rearCamera = cameras.find(camera => camera.label.toLowerCase().includes("back")) || cameras[0];
+      console.log("Using camera:", rearCamera.label);
+      await qrReader.start(
+        { deviceId: { exact: rearCamera.id } },
+        { fps: 10, qrbox: 250 },
+        (decodedText) => {
+          qrReader.pause();
+          processQRCode(decodedText);
+        },
+        (errorMessage) => {
+          // Ignoring scan failures to keep UI smooth
+        }
+      );
+    } catch (err) {
       showMessage("Failed to start camera: " + err, true);
-    });
+      console.error("Camera start failed:", err);
+    }
+  }
+
+  function processQRCode(decodedText) {
+    try {
+      let data;
+      try {
+        data = JSON.parse(decodedText);
+      } catch {
+        // If not JSON, treat decodedText as orderNumber only
+        data = { orderNumber: decodedText.trim(), customerName: "Unknown" };
+      }
+
+      if (!data.orderNumber) {
+        throw new Error("Missing orderNumber");
+      }
+
+      currentOrder = data;
+      orderDetailsElem.textContent =
+        `Order Number: ${data.orderNumber}\nCustomer: ${data.customerName || "Unknown"}`;
+
+      btnEnd.disabled = false;
+      btnIncomplete.disabled = false;
+      commentSection.style.display = "none";
+      commentInput.value = "";
+      clearMessage();
+    } catch (err) {
+      showMessage("Invalid QR code data. Please scan a valid order.", true);
+      orderDetailsElem.textContent = "No order scanned yet.";
+      btnEnd.disabled = true;
+      btnIncomplete.disabled = true;
+      currentOrder = null;
+      qrReader.resume();
+      console.error("QR Processing error:", err);
+    }
   }
 
   btnEnd.addEventListener("click", () => {
     if (!currentOrder) return;
+    console.log("Completing order:", currentOrder.orderNumber);
     clearMessage();
     btnEnd.disabled = true;
     btnIncomplete.disabled = true;
@@ -236,21 +252,30 @@
 
     showMessage("Completing order...");
 
-    // Simulated API call — success always
     fakeApiUpdate({
       orderNumber: currentOrder.orderNumber,
       status: "completed",
-    }).then(() => {
-      showMessage(`Order ${currentOrder.orderNumber} marked as completed.`);
-      qrReader.clear().then(() => {
-        resetUI();
-        startScanner();
+    })
+      .then(() => {
+        console.log("Order completed successfully");
+        showMessage(`Order ${currentOrder.orderNumber} marked as completed.`);
+        qrReader.clear()
+          .then(() => {
+            resetUI();
+            startScanner();
+          })
+          .catch(err => {
+            console.error("Failed to clear scanner:", err);
+            resetUI();
+            startScanner();
+          });
+      })
+      .catch((err) => {
+        console.error("Failed to update order status:", err);
+        showMessage("Failed to update order status.", true);
+        btnEnd.disabled = false;
+        btnIncomplete.disabled = false;
       });
-    }).catch(() => {
-      showMessage("Failed to update order status.", true);
-      btnEnd.disabled = false;
-      btnIncomplete.disabled = false;
-    });
   });
 
   btnIncomplete.addEventListener("click", () => {
@@ -273,32 +298,42 @@
 
     showMessage("Updating order as incomplete...");
 
-    // Simulated API call — fail intentionally for testing
     fakeApiUpdate({
       orderNumber: currentOrder.orderNumber,
       status: "incomplete",
       comment,
-    }).then(() => {
-      showMessage(`Order ${currentOrder.orderNumber} marked as incomplete.`);
-      qrReader.clear().then(() => {
-        resetUI();
+    })
+      .then(() => {
+        console.log("Order marked as incomplete");
+        showMessage(`Order ${currentOrder.orderNumber} marked as incomplete.`);
+        qrReader.clear()
+          .then(() => {
+            resetUI();
+            btnSubmitComment.disabled = false;
+            startScanner();
+          })
+          .catch(err => {
+            console.error("Failed to clear scanner:", err);
+            resetUI();
+            btnSubmitComment.disabled = false;
+            startScanner();
+          });
+      })
+      .catch((err) => {
+        console.error("Failed to update order status:", err);
+        showMessage("Failed to update order status.", true);
+        btnEnd.disabled = false;
+        btnIncomplete.disabled = false;
         btnSubmitComment.disabled = false;
-        startScanner();
       });
-    }).catch(() => {
-      showMessage("Failed to update order status.", true);
-      btnEnd.disabled = false;
-      btnIncomplete.disabled = false;
-      btnSubmitComment.disabled = false;
-    });
   });
 
-  // Fake API update function to simulate server response with failure on incomplete status
+  // Simulated API update function that always resolves successfully
   function fakeApiUpdate(data) {
     console.log("Simulated API request:", data);
     return new Promise((resolve) => {
       setTimeout(() => {
-        resolve(); // Always succeeds
+        resolve();
       }, 1000);
     });
   }
