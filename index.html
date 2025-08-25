@@ -9,427 +9,26 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let app, db, auth;
-        let userId = null;
-        let orders = [];
-        let currentOrderID = null;
-        let currentName = null;
-        let html5QrCode;
-        let scannerStarted = false;
-
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Get all DOM elements after the document has loaded
-            const reader = document.getElementById('reader');
-            const scannedInfo = document.getElementById('scanned-info');
-            const scannedDoDisplay = document.getElementById('scanned-do');
-            const scannedNameDisplay = document.getElementById('scanned-name');
-            const statusActions = document.getElementById('status-actions');
-            const completeBtn = document.getElementById('complete-btn');
-            const incompleteBtn = document.getElementById('incomplete-btn');
-            const commentModal = document.getElementById('comment-modal');
-            const commentInput = document.getElementById('comment-input');
-            const submitCommentBtn = document.getElementById('submit-comment');
-            const cancelCommentBtn = document.getElementById('cancel-comment');
-            const exportBtn = document.getElementById('export-btn');
-            const clearBtn = document.getElementById('clear-btn');
-            const ordersTableBody = document.getElementById('orders-table-body');
-            const confirmationModal = document.getElementById('confirmation-modal');
-            const confirmationTitle = document.getElementById('confirmation-title');
-            const confirmationText = document.getElementById('confirmation-text');
-            const confirmClearBtn = document.getElementById('confirm-clear');
-            const cancelClearBtn = document.getElementById('cancel-clear');
-            const loginSection = document.getElementById('login-section');
-            const appContent = document.getElementById('app-content');
-            const loginBtn = document.getElementById('login-btn');
-            const emailInput = document.getElementById('email-input');
-            const passwordInput = document.getElementById('password-input');
-            const loginError = document.getElementById('login-error');
-            const userIdDisplay = document.getElementById('user-id-display');
-            const loadingScreen = document.getElementById('loading-screen');
-
-            // Explicitly check for an empty Firebase config before attempting to initialize
-            if (Object.keys(firebaseConfig).length === 0) {
-                console.error("Firebase configuration is missing.");
-                loadingScreen.classList.add('hidden');
-                loginError.textContent = "Error: App configuration is missing. This app cannot run.";
-                loginError.classList.remove('hidden');
-                loginSection.classList.remove('hidden');
-                loginBtn.disabled = true;
-                return; // Exit the function as the app cannot proceed
-            }
-
-            // Initialize Firebase services
-            try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-                loadingScreen.classList.add('hidden');
-                loginError.textContent = `Error: Firebase initialization failed. Details: ${error.message}`;
-                loginError.classList.remove('hidden');
-                loginSection.classList.remove('hidden');
-                loginBtn.disabled = true;
-                return;
-            }
-            
-            // Use onAuthStateChanged as the single source of truth for UI state
-            onAuthStateChanged(auth, (user) => {
-                loadingScreen.classList.add('hidden');
-                if (user) {
-                    // User is logged in, show the main app content
-                    userId = user.uid;
-                    loginSection.classList.add('hidden');
-                    appContent.classList.remove('hidden');
-                    userIdDisplay.textContent = userId;
-                    
-                    // Start the QR scanner and Firestore listener
-                    if (!scannerStarted) {
-                        startScanner();
-                        scannerStarted = true;
-                    }
-                    
-                    const ordersQuery = query(collection(db, `artifacts/${appId}/users/${userId}/orders`));
-                    onSnapshot(ordersQuery, (snapshot) => {
-                        orders = [];
-                        snapshot.forEach(doc => {
-                            orders.push({ id: doc.id, ...doc.data() });
-                        });
-                        orders.sort((a, b) => b.timestamp - a.timestamp);
-                        renderOrders();
-                    });
-                } else {
-                    // User is logged out, show the login section
-                    userId = null;
-                    loginSection.classList.remove('hidden');
-                    appContent.classList.add('hidden');
-                }
-            });
-
-            // Attempt to sign in with the custom token or anonymously in the background
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (error) {
-                console.error("Initial authentication failed:", error);
-            }
-
-            // Define the login handler function
-            async function handleLogin() {
-                const email = emailInput.value;
-                const password = passwordInput.value;
-
-                loginBtn.disabled = true;
-                loginBtn.textContent = 'Logging in...';
-                loginError.classList.add('hidden');
-
-                try {
-                    await signInWithEmailAndPassword(auth, email, password);
-                } catch (error) {
-                    let errorMessage = "An unknown error occurred.";
-                    switch(error.code) {
-                        case 'auth/invalid-email':
-                            errorMessage = "Invalid email format.";
-                            break;
-                        case 'auth/user-not-found':
-                        case 'auth/wrong-password':
-                            errorMessage = "Incorrect email or password.";
-                            break;
-                        case 'auth/network-request-failed':
-                            errorMessage = "Network error. Please check your connection.";
-                            break;
-                        default:
-                            errorMessage = error.message;
-                            break;
-                    }
-                    loginError.textContent = errorMessage;
-                    loginError.classList.remove('hidden');
-                } finally {
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = 'Login';
-                }
-            }
-            
-            // Attach login button event listener to the new function
-            loginBtn.addEventListener('click', handleLogin);
-
-            // All other event listeners for the main app
-            completeBtn.addEventListener('click', () => {
-                addNewOrder('Complete');
-            });
-
-            incompleteBtn.addEventListener('click', () => {
-                commentModal.classList.remove('hidden');
-            });
-
-            submitCommentBtn.addEventListener('click', () => {
-                const comment = commentInput.value.trim();
-                addNewOrder('Incomplete', comment);
-                commentInput.value = '';
-                commentModal.classList.add('hidden');
-            });
-
-            cancelCommentBtn.addEventListener('click', () => {
-                commentInput.value = '';
-                commentModal.classList.add('hidden');
-                resetUI();
-                if (html5QrCode) {
-                    html5QrCode.resume();
-                }
-            });
-
-            clearBtn.addEventListener('click', () => {
-                if (orders.length === 0) {
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
-                            <p class="text-gray-600">There is no history to clear.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
-                    return;
-                }
-                confirmationTitle.textContent = "Clear History";
-                confirmationText.textContent = "Are you sure you want to clear all data? This action cannot be undone.";
-                confirmClearBtn.textContent = "Confirm";
-                confirmClearBtn.className = 'py-2 px-4 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors';
-                confirmationModal.classList.remove('hidden');
-            });
-
-            confirmClearBtn.addEventListener('click', async () => {
-                if (confirmClearBtn.textContent === "Confirm") {
-                    confirmationTitle.textContent = "Final Confirmation";
-                    confirmationText.textContent = "This will permanently delete all data. Are you absolutely sure?";
-                    confirmClearBtn.textContent = "Clear All";
-                    confirmClearBtn.className = 'py-2 px-4 bg-red-700 text-white font-medium rounded-lg hover:bg-red-800 transition-colors';
-                } else if (confirmClearBtn.textContent === "Clear All") {
-                    await clearAllOrders();
-                    orders = [];
-                    renderOrders();
-                    confirmationModal.classList.add('hidden');
-                }
-            });
-
-            cancelClearBtn.addEventListener('click', () => {
-                confirmationModal.classList.add('hidden');
-            });
-
-            exportBtn.addEventListener('click', () => {
-                if (orders.length === 0) {
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
-                            <p class="text-gray-600">No data to export yet.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
-                    return;
-                }
-                let csv = 'OrderID,Name,Status,Comment,Date,Time\n';
-                orders.forEach(order => {
-                    const doNo = order.doNo ? order.doNo : '';
-                    const name = order.name ? order.name.replace(/"/g, '""') : '';
-                    const comment = order.comment ? order.comment.replace(/"/g, '""') : '—';
-                    csv += `"DO no: "${doNo}"` + `,"Name: "${name}"` + `,${order.status},"${comment}",${order.date},${order.time}\n`;
-                });
-
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const link = document.createElement("a");
-                const url = URL.createObjectURL(blob);
-                link.setAttribute("href", url);
-                link.setAttribute("download", "orders.csv");
-                link.style.visibility = 'hidden';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            });
-
-            // All function definitions are now inside the DOMContentLoaded listener
-            function startScanner() {
-                html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-                let lastScannedText = null;
-                let debounceTimeout = null;
-                
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    (decodedText, decodedResult) => {
-                        if (lastScannedText === decodedText) {
-                            return;
-                        }
-                        if (debounceTimeout) {
-                            clearTimeout(debounceTimeout);
-                        }
-                        lastScannedText = decodedText;
-                        debounceTimeout = setTimeout(() => {
-                            const trimmedText = decodedText.trim();
-                            let doNo = trimmedText;
-                            let name = 'N/A';
-                            if (trimmedText.includes(',')) {
-                                const parts = trimmedText.split(',');
-                                doNo = parts[0] ? parts[0].trim() : 'N/A';
-                                name = parts[1] ? parts[1].trim() : 'N/A';
-                            }
-                            else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
-                                const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
-                                const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
-                                
-                                doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
-                                name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
-                            }
-                            doNo = doNo.replace(/^"|"$/g, '');
-                            name = name.replace(/^"|"$/g, '');
-                            currentOrderID = doNo;
-                            currentName = name;
-                            scannedDoDisplay.textContent = currentOrderID;
-                            scannedNameDisplay.textContent = currentName;
-                            scannedInfo.classList.remove('hidden');
-                            statusActions.classList.remove('hidden');
-                            html5QrCode.pause();
-                        }, 500);
-                    },
-                    (errorMessage) => {
-                    }
-                ).catch((err) => {
-                    console.error(`Unable to start scanning, make sure camera is available.`, err);
-                    const messageBox = document.createElement('div');
-                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
-                    messageBox.innerHTML = `
-                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <h2 class="text-xl font-semibold mb-4 text-gray-800">Error</h2>
-                            <p class="text-gray-600">Unable to start the camera. Please ensure camera permissions are granted.</p>
-                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
-                        </div>
-                    `;
-                    document.body.appendChild(messageBox);
-                });
-            }
-
-            function renderOrders() {
-                ordersTableBody.innerHTML = '';
-                if (orders.length === 0) {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td colspan="6" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
-                    ordersTableBody.appendChild(row);
-                    return;
-                }
-                orders.forEach(order => {
-                    const row = document.createElement('tr');
-                    const statusColor = order.status === 'Complete' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                    const comment = order.comment ? order.comment : '—';
-                    const name = order.name ? order.name : '—';
-                    row.innerHTML = `
-                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${order.doNo}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${name}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span></td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${comment}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.date}</td>
-                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.time}</td>
-                    `;
-                    ordersTableBody.appendChild(row);
-                });
-            }
-
-            async function addNewOrder(status, comment = null) {
-                if (!currentOrderID || !userId) return;
-                const now = new Date();
-                const newOrderRef = doc(collection(db, `artifacts/${appId}/users/${userId}/orders`));
-                const orderData = {
-                    doNo: currentOrderID,
-                    name: currentName,
-                    status: status,
-                    comment: comment,
-                    date: now.toLocaleDateString(),
-                    time: now.toLocaleTimeString(),
-                    timestamp: now.getTime()
-                };
-                try {
-                    await setDoc(newOrderRef, orderData);
-                    resetUI();
-                    if (html5QrCode) {
-                        html5QrCode.resume();
-                    }
-                } catch (e) {
-                    console.error("Error adding document: ", e);
-                }
-            }
-
-            async function clearAllOrders() {
-                if (!userId) return;
-                const ordersRef = collection(db, `artifacts/${appId}/users/${userId}/orders`);
-                const snapshot = await getDocs(ordersRef);
-                const deletePromises = [];
-                snapshot.forEach(doc => {
-                    deletePromises.push(deleteDoc(doc.ref));
-                });
-                try {
-                    await Promise.all(deletePromises);
-                    console.log("All documents successfully deleted!");
-                } catch (e) {
-                    console.error("Error clearing documents: ", e);
-                }
-            }
-
-            function resetUI() {
-                currentOrderID = null;
-                currentName = null;
-                scannedInfo.classList.add('hidden');
-                statusActions.classList.add('hidden');
-            }
-        });
-    </script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 font-sans">
     
-    <!-- Loading Screen -->
-    <div id="loading-screen" class="fixed inset-0 flex items-center justify-center bg-gray-100 z-50">
-        <div class="text-center">
-            <svg class="animate-spin h-10 w-10 text-gray-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p class="mt-4 text-gray-600">Loading...</p>
-        </div>
-    </div>
-
     <div id="app-container" class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-6 lg:p-10 flex flex-col items-center">
-        <!-- Login Section -->
-        <div id="login-section" class="w-full max-w-md p-6 bg-gray-50 rounded-lg shadow-inner hidden">
-            <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Login</h1>
+        <!-- Name Input Section -->
+        <div id="name-input-section" class="w-full max-w-md p-6 bg-gray-50 rounded-lg shadow-inner">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">QR Order Tracker</h1>
+            <p class="text-gray-600 mb-4 text-center">Please enter your name to begin.</p>
             <div class="space-y-4">
-                <input id="email-input" type="email" placeholder="Email" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <input id="password-input" type="password" placeholder="Password" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button id="login-btn" class="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-md">Login</button>
+                <input id="user-name-input" type="text" placeholder="Your Name" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="start-btn" class="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-md">Start Scanning</button>
             </div>
-            <p id="login-error" class="text-red-500 text-sm mt-4 text-center hidden"></p>
+            <p id="name-error" class="text-red-500 text-sm mt-4 text-center hidden">Please enter your name.</p>
         </div>
 
         <!-- Main App Content -->
         <div id="app-content" class="w-full hidden">
             <div class="text-center mb-6">
                 <h1 class="text-3xl font-bold text-gray-800">QR Order Tracker</h1>
-                <p class="text-sm text-gray-500 mt-1">Logged in as: <span id="user-id-display" class="font-medium"></span></p>
+                <p class="text-sm text-gray-500 mt-1">Logged in as: <span id="user-name-display" class="font-medium"></span></p>
             </div>
             
             <!-- QR Code Reader Section -->
@@ -506,5 +105,290 @@
             </div>
         </div>
     </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Get all DOM elements
+            const nameInputSection = document.getElementById('name-input-section');
+            const startBtn = document.getElementById('start-btn');
+            const userNameInput = document.getElementById('user-name-input');
+            const nameError = document.getElementById('name-error');
+            const appContent = document.getElementById('app-content');
+            const userNameDisplay = document.getElementById('user-name-display');
+            const reader = document.getElementById('reader');
+            const scannedInfo = document.getElementById('scanned-info');
+            const scannedDoDisplay = document.getElementById('scanned-do');
+            const scannedNameDisplay = document.getElementById('scanned-name');
+            const statusActions = document.getElementById('status-actions');
+            const completeBtn = document.getElementById('complete-btn');
+            const incompleteBtn = document.getElementById('incomplete-btn');
+            const commentModal = document.getElementById('comment-modal');
+            const commentInput = document.getElementById('comment-input');
+            const submitCommentBtn = document.getElementById('submit-comment');
+            const cancelCommentBtn = document.getElementById('cancel-comment');
+            const exportBtn = document.getElementById('export-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const ordersTableBody = document.getElementById('orders-table-body');
+            const confirmationModal = document.getElementById('confirmation-modal');
+            const confirmationTitle = document.getElementById('confirmation-title');
+            const confirmationText = document.getElementById('confirmation-text');
+            const confirmClearBtn = document.getElementById('confirm-clear');
+            const cancelClearBtn = document.getElementById('cancel-clear');
+
+            let orders = [];
+            let currentOrderID = null;
+            let currentName = null;
+            let userName = '';
+            let html5QrCode;
+            let scannerStarted = false;
+
+            // Load saved orders from local storage
+            loadOrders();
+
+            startBtn.addEventListener('click', () => {
+                const name = userNameInput.value.trim();
+                if (name) {
+                    userName = name;
+                    nameInputSection.classList.add('hidden');
+                    appContent.classList.remove('hidden');
+                    userNameDisplay.textContent = userName;
+                    if (!scannerStarted) {
+                        startScanner();
+                        scannerStarted = true;
+                    }
+                    renderOrders();
+                } else {
+                    nameError.classList.remove('hidden');
+                }
+            });
+
+            completeBtn.addEventListener('click', () => {
+                addNewOrder('Complete');
+            });
+
+            incompleteBtn.addEventListener('click', () => {
+                commentModal.classList.remove('hidden');
+            });
+
+            submitCommentBtn.addEventListener('click', () => {
+                const comment = commentInput.value.trim();
+                addNewOrder('Incomplete', comment);
+                commentInput.value = '';
+                commentModal.classList.add('hidden');
+            });
+
+            cancelCommentBtn.addEventListener('click', () => {
+                commentInput.value = '';
+                commentModal.classList.add('hidden');
+                resetUI();
+                if (html5QrCode) {
+                    html5QrCode.resume();
+                }
+            });
+
+            clearBtn.addEventListener('click', () => {
+                if (orders.length === 0) {
+                    const messageBox = document.createElement('div');
+                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                    messageBox.innerHTML = `
+                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
+                            <p class="text-gray-600">There is no history to clear.</p>
+                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(messageBox);
+                    return;
+                }
+                confirmationTitle.textContent = "Clear History";
+                confirmationText.textContent = "Are you sure you want to clear all data? This action cannot be undone.";
+                confirmClearBtn.textContent = "Confirm";
+                confirmClearBtn.className = 'py-2 px-4 bg-red-500 text-white font-medium rounded-lg hover:bg-red-600 transition-colors';
+                confirmationModal.classList.remove('hidden');
+            });
+
+            confirmClearBtn.addEventListener('click', () => {
+                if (confirmClearBtn.textContent === "Confirm") {
+                    confirmationTitle.textContent = "Final Confirmation";
+                    confirmationText.textContent = "This will permanently delete all data. Are you absolutely sure?";
+                    confirmClearBtn.textContent = "Clear All";
+                    confirmClearBtn.className = 'py-2 px-4 bg-red-700 text-white font-medium rounded-lg hover:bg-red-800 transition-colors';
+                } else if (confirmClearBtn.textContent === "Clear All") {
+                    clearAllOrders();
+                    orders = [];
+                    renderOrders();
+                    confirmationModal.classList.add('hidden');
+                }
+            });
+
+            cancelClearBtn.addEventListener('click', () => {
+                confirmationModal.classList.add('hidden');
+            });
+
+            exportBtn.addEventListener('click', () => {
+                if (orders.length === 0) {
+                    const messageBox = document.createElement('div');
+                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                    messageBox.innerHTML = `
+                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-800">No Data</h2>
+                            <p class="text-gray-600">No data to export yet.</p>
+                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(messageBox);
+                    return;
+                }
+                let csv = 'OrderID,Name,Status,Comment,Date,Time\n';
+                orders.forEach(order => {
+                    const doNo = order.doNo ? order.doNo : '';
+                    const name = order.name ? order.name.replace(/"/g, '""') : '';
+                    const comment = order.comment ? order.comment.replace(/"/g, '""') : '—';
+                    csv += `"${doNo}",` + `"${name}",` + `${order.status},"${comment}",${order.date},${order.time}\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `orders_${userName.toLowerCase().replace(/\s/g, '-')}_${new Date().toISOString().slice(0, 10)}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+
+            function startScanner() {
+                html5QrCode = new Html5Qrcode("reader");
+                const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+                let lastScannedText = null;
+                let debounceTimeout = null;
+                
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText) => {
+                        if (lastScannedText === decodedText) {
+                            return;
+                        }
+                        if (debounceTimeout) {
+                            clearTimeout(debounceTimeout);
+                        }
+                        lastScannedText = decodedText;
+                        debounceTimeout = setTimeout(() => {
+                            const trimmedText = decodedText.trim();
+                            let doNo = trimmedText;
+                            let name = 'N/A';
+                            
+                            // Basic parsing logic to extract DO No and Name
+                            if (trimmedText.includes(',')) {
+                                const parts = trimmedText.split(',');
+                                doNo = parts[0] ? parts[0].trim() : 'N/A';
+                                name = parts[1] ? parts[1].trim() : 'N/A';
+                            } else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
+                                const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
+                                const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
+                                
+                                doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
+                                name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
+                            }
+                            
+                            currentOrderID = doNo;
+                            currentName = name;
+                            scannedDoDisplay.textContent = currentOrderID;
+                            scannedNameDisplay.textContent = currentName;
+                            scannedInfo.classList.remove('hidden');
+                            statusActions.classList.remove('hidden');
+                            html5QrCode.pause();
+                        }, 500);
+                    },
+                    (errorMessage) => {
+                    }
+                ).catch((err) => {
+                    console.error(`Unable to start scanning, make sure camera is available.`, err);
+                    const messageBox = document.createElement('div');
+                    messageBox.className = 'fixed inset-0 flex items-center justify-center z-50 p-4';
+                    messageBox.innerHTML = `
+                        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm text-center">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-800">Error</h2>
+                            <p class="text-gray-600">Unable to start the camera. Please ensure camera permissions are granted.</p>
+                            <button onclick="this.parentNode.parentNode.remove()" class="mt-4 py-2 px-4 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors">OK</button>
+                        </div>
+                    `;
+                    document.body.appendChild(messageBox);
+                });
+            }
+
+            function loadOrders() {
+                const storedOrders = localStorage.getItem('qr_orders');
+                if (storedOrders) {
+                    orders = JSON.parse(storedOrders);
+                    renderOrders();
+                }
+            }
+
+            function saveOrders() {
+                localStorage.setItem('qr_orders', JSON.stringify(orders));
+            }
+
+            function renderOrders() {
+                ordersTableBody.innerHTML = '';
+                if (orders.length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="6" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
+                    ordersTableBody.appendChild(row);
+                    return;
+                }
+                orders.sort((a, b) => b.timestamp - a.timestamp);
+                orders.forEach(order => {
+                    const row = document.createElement('tr');
+                    const statusColor = order.status === 'Complete' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                    const comment = order.comment ? order.comment : '—';
+                    const name = order.name ? order.name : '—';
+                    row.innerHTML = `
+                        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${order.doNo}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${name}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span></td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${comment}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.date}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.time}</td>
+                    `;
+                    ordersTableBody.appendChild(row);
+                });
+            }
+
+            function addNewOrder(status, comment = null) {
+                if (!currentOrderID || !userName) return;
+                const now = new Date();
+                const newOrder = {
+                    doNo: currentOrderID,
+                    name: currentName,
+                    status: status,
+                    comment: comment,
+                    date: now.toLocaleDateString(),
+                    time: now.toLocaleTimeString(),
+                    timestamp: now.getTime()
+                };
+                orders.push(newOrder);
+                saveOrders();
+                renderOrders();
+                resetUI();
+                if (html5QrCode) {
+                    html5QrCode.resume();
+                }
+            }
+
+            function clearAllOrders() {
+                localStorage.removeItem('qr_orders');
+            }
+
+            function resetUI() {
+                currentOrderID = null;
+                currentName = null;
+                scannedInfo.classList.add('hidden');
+                statusActions.classList.add('hidden');
+            }
+        });
+    </script>
 </body>
 </html>
