@@ -3,189 +3,65 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mobile Friendly QR Order Scanner</title>
+  <title>Simple QR Code Scanner</title>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-        Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+      font-family: Arial, sans-serif;
       margin: 0;
       padding: 20px;
-      background: #f9f9f9;
-      color: #222;
       display: flex;
       flex-direction: column;
       align-items: center;
-      min-height: 100vh;
+      background: #f5f5f5;
+      height: 100vh;
       box-sizing: border-box;
     }
     h1 {
-      font-size: 1.5rem;
-      margin-bottom: 1rem;
+      margin-bottom: 20px;
       text-align: center;
-      max-width: 400px;
     }
     #qr-reader {
-      width: 100%;
+      width: 90vw;
       max-width: 400px;
-      margin: 0 auto 20px;
-      border-radius: 8px;
+      border-radius: 10px;
       overflow: hidden;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-      background: #000;
-    }
-    #order-details {
-      white-space: pre-wrap;
-      font-family: monospace;
-      background: #fff;
-      padding: 15px;
-      max-width: 400px;
-      width: 100%;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      margin-bottom: 20px;
-      min-height: 80px;
-      user-select: text;
-    }
-    #end-btn {
-      background-color: #007bff;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 15px 25px;
-      font-size: 1.2rem;
-      font-weight: 600;
-      cursor: pointer;
-      max-width: 400px;
-      width: 100%;
-      transition: background-color 0.3s ease;
-      box-shadow: 0 4px 8px rgba(0,123,255,0.3);
-    }
-    #end-btn:disabled {
-      background-color: #aaa;
-      cursor: not-allowed;
-      box-shadow: none;
-    }
-    #message {
-      margin-top: 15px;
-      color: #d9534f;
-      font-weight: 600;
-      min-height: 20px;
-      max-width: 400px;
-      width: 100%;
-      text-align: center;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      background: black;
     }
   </style>
 </head>
 <body>
 
-  <h1>Scan QR Code for Order Details</h1>
-
+  <h1>QR Code Scanner</h1>
   <div id="qr-reader"></div>
 
-  <div id="order-details">No order scanned yet.</div>
-
-  <button id="end-btn" disabled>End Order</button>
-
-  <div id="message"></div>
-
   <script>
-    let currentOrder = null;
-    const orderDetailsElem = document.getElementById('order-details');
-    const endBtn = document.getElementById('end-btn');
-    const messageElem = document.getElementById('message');
+    const qrReader = new Html5Qrcode("qr-reader");
 
-    function showMessage(text, isError = false) {
-      messageElem.textContent = text;
-      messageElem.style.color = isError ? '#d9534f' : '#28a745';
-    }
-
-    function clearMessage() {
-      messageElem.textContent = '';
-    }
-
-    function onScanSuccess(decodedText, decodedResult) {
-      // Stop scanning after success
-      html5QrcodeScanner.clear().then(() => {
-        try {
-          // Expecting JSON string in QR code
-          currentOrder = JSON.parse(decodedText);
-
-          orderDetailsElem.textContent = 
-            `Order ID: ${currentOrder.id}\n` +
-            `Customer: ${currentOrder.customer}\n` +
-            `Items: ${JSON.stringify(currentOrder.items, null, 2)}`;
-
-          endBtn.disabled = false;
-          clearMessage();
-        } catch (e) {
-          showMessage("Invalid QR code data. Please scan a valid order.", true);
-          orderDetailsElem.textContent = 'No order scanned yet.';
-          endBtn.disabled = true;
-          currentOrder = null;
-          // Restart scanning for next try
-          startScanner();
-        }
-      });
-    }
-
-    function onScanFailure(error) {
-      // We can ignore scan failure for smoother UX
-      // console.warn(`Scan error: ${error}`);
-    }
-
-    let html5QrcodeScanner;
-
-    function startScanner() {
-      html5QrcodeScanner = new Html5Qrcode("qr-reader");
-
-      html5QrcodeScanner.start(
-        { facingMode: "environment" }, // back camera preferred
+    function startScanning() {
+      qrReader.start(
+        {}, // empty constraints = default camera
         {
           fps: 10,
           qrbox: { width: 250, height: 250 }
         },
-        onScanSuccess,
-        onScanFailure
-      ).catch(err => {
-        showMessage("Unable to start camera: " + err, true);
+        qrCodeMessage => {
+          alert(`QR Code detected: ${qrCodeMessage}`);
+          qrReader.stop().catch(err => console.error("Failed to stop scanner:", err));
+        },
+        errorMessage => {
+          // console.log(`QR scan error: ${errorMessage}`);
+        }
+      ).then(() => {
+        console.log("QR scanner started.");
+      }).catch(err => {
+        alert("Unable to start the camera: " + err);
       });
     }
 
-    endBtn.addEventListener('click', () => {
-      if (!currentOrder) return;
-
-      endBtn.disabled = true;
-      showMessage("Updating order status...");
-
-      // Example API call to update order status
-      fetch('/api/update-order-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId: currentOrder.id, status: 'completed' })
-      })
-      .then(response => {
-        if (!response.ok) throw new Error("Network response was not ok");
-        return response.json();
-      })
-      .then(data => {
-        showMessage(`Order ${currentOrder.id} marked as complete!`);
-        orderDetailsElem.textContent = 'No order scanned yet.';
-        currentOrder = null;
-
-        // Restart scanning for next order
-        startScanner();
-      })
-      .catch(err => {
-        showMessage("Failed to update order status.", true);
-        console.error(err);
-        endBtn.disabled = false;
-      });
-    });
-
-    // Start scanning on page load
     window.onload = () => {
-      startScanner();
+      startScanning();
     };
   </script>
 
