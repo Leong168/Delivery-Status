@@ -27,7 +27,6 @@
         let currentName = null;
         let html5QrCode;
         let scannerStarted = false;
-        let isAuthReady = false; // Flag to track if auth service is initialized and ready
 
         document.addEventListener('DOMContentLoaded', async () => {
             // Get all DOM elements after the document has loaded
@@ -49,7 +48,7 @@
             const confirmationTitle = document.getElementById('confirmation-title');
             const confirmationText = document.getElementById('confirmation-text');
             const confirmClearBtn = document.getElementById('confirm-clear');
-            const cancelClearBtn = document = document.getElementById('cancel-clear');
+            const cancelClearBtn = document.getElementById('cancel-clear');
             const loginSection = document.getElementById('login-section');
             const appContent = document.getElementById('app-content');
             const loginBtn = document.getElementById('login-btn');
@@ -65,12 +64,11 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
             
-                // Set up authentication state listener to handle UI changes
+                // Use onAuthStateChanged as the single source of truth for UI state
                 onAuthStateChanged(auth, (user) => {
-                    isAuthReady = true; // Mark auth as ready
                     loadingScreen.classList.add('hidden');
                     if (user) {
-                        // User is logged in
+                        // User is logged in, show the main app content
                         userId = user.uid;
                         loginSection.classList.add('hidden');
                         appContent.classList.remove('hidden');
@@ -92,14 +90,14 @@
                             renderOrders();
                         });
                     } else {
-                        // User is logged out
+                        // User is logged out, show the login section
                         userId = null;
                         loginSection.classList.remove('hidden');
                         appContent.classList.add('hidden');
                     }
                 });
 
-                // Initial sign in with custom token or anonymously
+                // Attempt to sign in with the custom token or anonymously in the background
                 try {
                     if (initialAuthToken) {
                         await signInWithCustomToken(auth, initialAuthToken);
@@ -108,30 +106,18 @@
                     }
                 } catch (error) {
                     console.error("Initial authentication failed:", error);
-                    loadingScreen.classList.add('hidden');
-                    loginSection.classList.remove('hidden');
-                    // Display an error message to the user
-                    loginError.textContent = `Initial sign-in failed. Please use email/password. Error: ${error.message}`;
-                    loginError.classList.remove('hidden');
                 }
             } else {
                 console.error("Firebase configuration is missing.");
                 loadingScreen.classList.add('hidden');
                 loginSection.classList.remove('hidden');
+                loginBtn.disabled = true;
                 loginError.textContent = "Firebase is not configured. This app cannot run.";
                 loginError.classList.remove('hidden');
             }
 
             // Define the login handler function
             async function handleLogin() {
-                // Check if Firebase auth is ready before proceeding
-                if (!isAuthReady) {
-                    loginError.textContent = "Authentication service is not ready. Please wait a moment and try again.";
-                    loginError.classList.remove('hidden');
-                    console.error("Auth service not ready, login attempt failed.");
-                    return;
-                }
-
                 const email = emailInput.value;
                 const password = passwordInput.value;
 
