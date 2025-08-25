@@ -70,6 +70,7 @@
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DO no</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scanner Name</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comment</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
@@ -245,12 +246,15 @@
                     showMessageBox("No Data", "No data to export yet.");
                     return;
                 }
-                let csv = 'DO no,Name,Status,Comment,Date,Time\n';
+                // Updated CSV header to include 'Scanner Name'
+                let csv = 'DO no,Name,Scanner Name,Status,Comment,Date,Time\n';
                 orders.forEach(order => {
                     const doNo = order.doNo ? `"${order.doNo.replace(/"/g, '""')}"` : '""';
                     const name = order.name ? `"${order.name.replace(/"/g, '""')}"` : '""';
+                    const scannerName = order.scannerName ? `"${order.scannerName.replace(/"/g, '""')}"` : '""';
                     const comment = order.comment ? `"${order.comment.replace(/"/g, '""')}"` : '""';
-                    csv += `${doNo},${name},${order.status},${comment},${order.date},${order.time}\n`;
+                    // Updated CSV data to include the new column
+                    csv += `${doNo},${name},${scannerName},${order.status},${comment},${order.date},${order.time}\n`;
                 });
 
                 const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -349,7 +353,7 @@
                 ordersTableBody.innerHTML = '';
                 if (orders.length === 0) {
                     const row = document.createElement('tr');
-                    row.innerHTML = `<td colspan="6" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
+                    row.innerHTML = `<td colspan="7" class="py-4 text-center text-gray-500">No orders captured yet.</td>`;
                     ordersTableBody.appendChild(row);
                     return;
                 }
@@ -359,9 +363,11 @@
                     const statusColor = order.status === 'Complete' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
                     const comment = order.comment ? order.comment : '—';
                     const name = order.name ? order.name : '—';
+                    const scannerName = order.scannerName ? order.scannerName : '—';
                     row.innerHTML = `
                         <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${order.doNo}</td>
                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${name}</td>
+                        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${scannerName}</td>
                         <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusColor}">${order.status}</span></td>
                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${comment}</td>
                         <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${order.date}</td>
@@ -377,6 +383,8 @@
                 const newOrder = {
                     doNo: currentOrderID,
                     name: currentName,
+                    // New field to store the scanner's name
+                    scannerName: userName,
                     status: status,
                     comment: comment,
                     date: now.toLocaleDateString(),
