@@ -112,9 +112,15 @@
             }
 
             // Event listener for the login button
+            // This is now inside DOMContentLoaded to ensure `auth` is defined.
             loginBtn.addEventListener('click', async () => {
                 const email = emailInput.value;
                 const password = passwordInput.value;
+                if (!auth) {
+                    loginError.textContent = "Firebase authentication not initialized. Please refresh the page.";
+                    loginError.classList.remove('hidden');
+                    return;
+                }
                 try {
                     await signInWithEmailAndPassword(auth, email, password);
                     loginError.classList.add('hidden');
