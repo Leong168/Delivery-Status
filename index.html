@@ -103,6 +103,9 @@
                         userId = null;
                         loginSection.classList.remove('hidden');
                         appContent.classList.add('hidden');
+
+                        // Ensure login button is active if not authenticated
+                        setupLoginButton();
                     }
                 });
             } else {
@@ -111,40 +114,42 @@
                 loginSection.classList.remove('hidden');
             }
 
-            // Event listener for the login button
-            // This is now inside DOMContentLoaded to ensure `auth` is defined.
-            loginBtn.addEventListener('click', async () => {
-                const email = emailInput.value;
-                const password = passwordInput.value;
-                if (!auth) {
-                    loginError.textContent = "Firebase authentication not initialized. Please refresh the page.";
-                    loginError.classList.remove('hidden');
-                    return;
-                }
-                try {
-                    await signInWithEmailAndPassword(auth, email, password);
-                    loginError.classList.add('hidden');
-                } catch (error) {
-                    let errorMessage = "An unknown error occurred.";
-                    switch(error.code) {
-                        case 'auth/invalid-email':
-                            errorMessage = "Invalid email format.";
-                            break;
-                        case 'auth/user-not-found':
-                        case 'auth/wrong-password':
-                            errorMessage = "Incorrect email or password.";
-                            break;
-                        case 'auth/network-request-failed':
-                            errorMessage = "Network error. Please check your connection.";
-                            break;
-                        default:
-                            errorMessage = error.message;
-                            break;
+            // Function to set up the login button listener
+            function setupLoginButton() {
+                 loginBtn.addEventListener('click', async () => {
+                    const email = emailInput.value;
+                    const password = passwordInput.value;
+                    if (!auth) {
+                        loginError.textContent = "Firebase authentication not initialized. Please refresh the page.";
+                        loginError.classList.remove('hidden');
+                        return;
                     }
-                    loginError.textContent = errorMessage;
-                    loginError.classList.remove('hidden');
-                }
-            });
+                    try {
+                        await signInWithEmailAndPassword(auth, email, password);
+                        loginError.classList.add('hidden');
+                    } catch (error) {
+                        let errorMessage = "An unknown error occurred.";
+                        switch(error.code) {
+                            case 'auth/invalid-email':
+                                errorMessage = "Invalid email format.";
+                                break;
+                            case 'auth/user-not-found':
+                            case 'auth/wrong-password':
+                                errorMessage = "Incorrect email or password.";
+                                break;
+                            case 'auth/network-request-failed':
+                                errorMessage = "Network error. Please check your connection.";
+                                break;
+                            default:
+                                errorMessage = error.message;
+                                break;
+                        }
+                        loginError.textContent = errorMessage;
+                        loginError.classList.remove('hidden');
+                    }
+                }, { once: true }); // Use { once: true } to prevent multiple listeners
+            }
+
 
             // All other event listeners for the main app
             completeBtn.addEventListener('click', () => {
