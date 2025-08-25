@@ -58,21 +58,30 @@
             const userIdDisplay = document.getElementById('user-id-display');
             const loadingScreen = document.getElementById('loading-screen');
 
-            // Initialize Firebase services using a try-catch block for robust error handling
-            try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-            } catch (error) {
-                // If initialization fails, display a clear error message and hide the loading screen.
-                // This prevents the app from being stuck in a blank state.
-                console.error("Firebase initialization failed:", error);
+            // Explicitly check for an empty Firebase config before attempting to initialize
+            if (Object.keys(firebaseConfig).length === 0) {
+                console.error("Firebase configuration is missing.");
                 loadingScreen.classList.add('hidden');
                 loginError.textContent = "Error: App configuration is missing. This app cannot run.";
                 loginError.classList.remove('hidden');
                 loginSection.classList.remove('hidden');
                 loginBtn.disabled = true;
-                return; // Exit the function since the app cannot proceed
+                return; // Exit the function as the app cannot proceed
+            }
+
+            // Initialize Firebase services
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                loadingScreen.classList.add('hidden');
+                loginError.textContent = `Error: Firebase initialization failed. Details: ${error.message}`;
+                loginError.classList.remove('hidden');
+                loginSection.classList.remove('hidden');
+                loginBtn.disabled = true;
+                return;
             }
             
             // Use onAuthStateChanged as the single source of truth for UI state
