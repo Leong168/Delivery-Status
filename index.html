@@ -28,28 +28,11 @@
         let html5QrCode;
         let scannerStarted = false;
 
-        // Initialize Firebase services as soon as the script runs
+        // Initialize Firebase services
         if (Object.keys(firebaseConfig).length > 0) {
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
-            
-            // Handle sign-in with custom token or anonymously
-            async function handleAuth() {
-                if (initialAuthToken) {
-                    try {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                        console.log("Signed in with custom token.");
-                    } catch (error) {
-                        console.error("Custom token sign-in failed, falling back to anonymous:", error);
-                        signInAnonymously(auth);
-                    }
-                } else {
-                    signInAnonymously(auth);
-                    console.log("Signed in anonymously.");
-                }
-            }
-            handleAuth();
         }
         
         document.addEventListener('DOMContentLoaded', () => {
@@ -82,7 +65,7 @@
             const userIdDisplay = document.getElementById('user-id-display');
 
             // Handle UI state and set up listeners based on authentication
-            onAuthStateChanged(auth, (user) => {
+            onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
                     loginSection.classList.add('hidden');
@@ -105,9 +88,18 @@
                     });
                     
                 } else {
-                    userId = null;
-                    loginSection.classList.remove('hidden');
-                    appContent.classList.add('hidden');
+                    // Sign in with custom token or anonymously on initial load
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                         console.error("Authentication failed:", error);
+                         loginSection.classList.remove('hidden');
+                         appContent.classList.add('hidden');
+                    }
                 }
             });
 
