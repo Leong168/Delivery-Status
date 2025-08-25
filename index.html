@@ -294,23 +294,26 @@
                         let doNo = trimmedText;
                         let name = 'N/A';
                         
-                        // Basic parsing logic to extract DO No and Name
-                        if (trimmedText.includes(',')) {
+                        // New parsing logic to handle various formats
+                        const doNoMatch = trimmedText.match(/DO no:\s*(.*?)(?=\s*Name:|$)/i);
+                        const nameMatch = trimmedText.match(/Name:\s*(.*?)(?=\s*DO no:|$)/i);
+
+                        if (doNoMatch && doNoMatch[1]) {
+                            doNo = doNoMatch[1].trim();
+                        } else if (trimmedText.includes(',')) {
                             const parts = trimmedText.split(',');
                             doNo = parts[0] ? parts[0].trim() : 'N/A';
                             name = parts[1] ? parts[1].trim() : 'N/A';
-                        } else if (trimmedText.includes('DO no:') || trimmedText.includes('Name:')) {
-                            const doNoMatch = trimmedText.match(/DO no:\s*"(.*?)"/i);
-                            const nameMatch = trimmedText.match(/Name:\s*"(.*?)"/i);
-                            
-                            doNo = doNoMatch && doNoMatch[1] ? doNoMatch[1].trim() : trimmedText;
-                            name = nameMatch && nameMatch[1] ? nameMatch[1].trim() : 'N/A';
+                        }
+                        
+                        if (nameMatch && nameMatch[1]) {
+                            name = nameMatch[1].trim();
                         }
 
                         // Check for duplicates before proceeding
                         if (hasDuplicateOrder(doNo)) {
                             html5QrCode.pause(); // Pause scanner to show message
-                            showMessageBox("Duplicate Scan", "This order has already been scanned.");
+                            showMessageBox("Duplicate Scan", "QR code used.");
                             return;
                         }
 
