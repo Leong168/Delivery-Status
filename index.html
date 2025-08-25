@@ -48,11 +48,11 @@
 
     let html5QrcodeScanner = new Html5Qrcode("qr-reader");
     html5QrcodeScanner.start(
-      { facingMode: "environment" }, 
-      { fps: 10, qrbox: 250 },
-      onScanSuccess,
-      onScanFailure
-    ).catch(err => {
+  { facingMode: "environment" }, // back camera on phones
+  { fps: 10, qrbox: 250 },
+  onScanSuccess,
+  onScanFailure
+).catch(err => {
       console.error("Unable to start scanning:", err);
     });
 
